@@ -3,9 +3,19 @@
 import argparse
 import csv
 import json
+import os
 import sys
 
-from .client import LawGoKrClient, LawGoKrError
+from .client import SCOPE_CASE_NAME, SCOPE_FULLTEXT, LawGoKrClient, LawGoKrError
+
+_SCOPE_MAP = {"case_name": SCOPE_CASE_NAME, "fulltext": SCOPE_FULLTEXT}
+
+# 성폭력범죄의 처벌 등에 관한 특례법 제14조/제14조의2는 죄명(사건명)이 서로 달라
+# 사건명 검색으로 구분하는 것이 본문 검색보다 정확하다.
+DEFAULT_QUERY_ARTICLE_14 = "카메라등이용촬영"
+DEFAULT_LABEL_ARTICLE_14 = "성폭력처벌법 제14조(카메라 등을 이용한 촬영)"
+DEFAULT_QUERY_ARTICLE_14_2 = "허위영상물"
+DEFAULT_LABEL_ARTICLE_14_2 = "성폭력처벌법 제14조의2(허위영상물 등의 반포등)"
 
 
 def cmd_search(args):
@@ -15,6 +25,7 @@ def cmd_search(args):
         page=args.page,
         display=args.display,
         court=args.court,
+        scope=_SCOPE_MAP.get(args.scope),
     )
     items = result["items"]
 
@@ -60,6 +71,57 @@ def cmd_detail(args):
     print((detail.get("판례내용") or "").strip() or "(없음)")
 
 
+def cmd_compare(args):
+    client = LawGoKrClient(oc=args.oc)
+    groups = [
+        (args.label1, args.query1),
+        (args.label2, args.query2),
+    ]
+    scope = _SCOPE_MAP.get(args.scope)
+
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    results = []
+    for label, query in groups:
+        result = client.search_precedents_all(
+            query, court=args.court, scope=scope, max_results=args.max_results
+        )
+        items = result["items"]
+        out_path = os.path.join(args.out_dir, f"{_safe_filename(label)}.json")
+        _save(items, out_path)
+        results.append((label, query, result["total_count"], items, out_path))
+
+    print("검색 결과 요약")
+    print("-" * 60)
+    for label, query, total_count, items, out_path in results:
+        print(f"- {label}")
+        print(f"  검색어: {query!r}  범위: {args.scope}")
+        print(f"  전체 {total_count}건 중 {len(items)}건 수집 -> {out_path}")
+    print()
+
+    ids_by_label = {
+        label: {item.get("판례일련번호") for item in items}
+        for label, _q, _t, items, _p in results
+    }
+    (label1, _q1), (label2, _q2) = groups
+    overlap = ids_by_label[label1] & ids_by_label[label2]
+    if overlap:
+        print(
+            f"[주의] 두 그룹에 동시에 포함된 판례 {len(overlap)}건이 있습니다 "
+            "(하나의 판결문에서 두 죄명이 함께 다뤄졌을 가능성). "
+            "구분이 필요하면 각 판례를 직접 확인하세요:"
+        )
+        for prec_id in sorted(overlap):
+            print(f"  - {prec_id}")
+    else:
+        print("두 그룹 간 중복된 판례는 없습니다.")
+
+
+def _safe_filename(label):
+    keep = "".join(ch if ch.isalnum() else "_" for ch in label)
+    return keep.strip("_") or "result"
+
+
 def _save(data, path):
     if path.endswith(".csv"):
         rows = data if isinstance(data, list) else [data]
@@ -89,6 +151,12 @@ def build_parser():
     p_search.add_argument("--page", type=int, default=1)
     p_search.add_argument("--display", type=int, default=20, help="페이지당 건수 (최대 100)")
     p_search.add_argument("--court", help="법원명으로 필터 (예: 대법원)")
+    p_search.add_argument(
+        "--scope",
+        choices=["case_name", "fulltext"],
+        default=None,
+        help="검색 범위: case_name(사건명/죄명) 또는 fulltext(본문). 미지정 시 API 기본값 사용",
+    )
     p_search.add_argument("--out", help="결과를 저장할 파일 경로 (.json 또는 .csv)")
     p_search.set_defaults(func=cmd_search)
 
@@ -96,6 +164,29 @@ def build_parser():
     p_detail.add_argument("id", help="판례일련번호 (search 결과의 대괄호 안 번호)")
     p_detail.add_argument("--out", help="결과를 저장할 파일 경로 (.json)")
     p_detail.set_defaults(func=cmd_detail)
+
+    p_compare = sub.add_parser(
+        "compare",
+        help="두 죄명(조문)을 구분해서 판례를 검색하고 결과를 비교 (기본값: 성폭력처벌법 제14조 vs 제14조의2)",
+    )
+    p_compare.add_argument("--query1", default=DEFAULT_QUERY_ARTICLE_14, help="첫 번째 그룹 검색어")
+    p_compare.add_argument("--label1", default=DEFAULT_LABEL_ARTICLE_14, help="첫 번째 그룹 이름표")
+    p_compare.add_argument("--query2", default=DEFAULT_QUERY_ARTICLE_14_2, help="두 번째 그룹 검색어")
+    p_compare.add_argument("--label2", default=DEFAULT_LABEL_ARTICLE_14_2, help="두 번째 그룹 이름표")
+    p_compare.add_argument("--court", help="법원명으로 필터 (예: 대법원)")
+    p_compare.add_argument(
+        "--scope",
+        choices=["case_name", "fulltext"],
+        default="case_name",
+        help="검색 범위. 두 조문을 구분할 때는 사건명(case_name) 검색을 권장. 기본값 case_name",
+    )
+    p_compare.add_argument(
+        "--max-results", type=int, default=200, help="그룹당 최대 수집 건수 (기본 200)"
+    )
+    p_compare.add_argument(
+        "--out-dir", default="compare_results", help="결과 json을 저장할 디렉터리 (기본 compare_results)"
+    )
+    p_compare.set_defaults(func=cmd_compare)
 
     return parser
 

@@ -78,6 +78,62 @@ class LawGoKrClientTest(unittest.TestCase):
 
         self.assertEqual(detail["사건명"], "테스트 사건")
 
+    def test_search_precedents_all_paginates_across_multiple_calls(self):
+        # max_results(150)이 한 번 요청 가능한 최대 display(100)보다 크므로
+        # 100건짜리 1페이지 + 50건짜리 2페이지, 총 두 번의 API 호출이 필요하다.
+        client = LawGoKrClient(oc="test")
+        page1 = _mock_response(
+            {
+                "PrecSearch": {
+                    "totalCnt": "150",
+                    "page": "1",
+                    "prec": [{"판례일련번호": str(i)} for i in range(100)],
+                }
+            }
+        )
+        page2 = _mock_response(
+            {
+                "PrecSearch": {
+                    "totalCnt": "150",
+                    "page": "2",
+                    "prec": [{"판례일련번호": str(i)} for i in range(100, 150)],
+                }
+            }
+        )
+        with patch(
+            "judgment_search.client.requests.get", side_effect=[page1, page2]
+        ) as mock_get:
+            result = client.search_precedents_all("테스트", max_results=150, delay=0)
+
+        self.assertEqual(result["total_count"], 150)
+        self.assertEqual(len(result["items"]), 150)
+        self.assertEqual(mock_get.call_count, 2)
+
+    def test_search_precedents_all_stops_at_max_results(self):
+        client = LawGoKrClient(oc="test")
+        page1 = _mock_response(
+            {
+                "PrecSearch": {
+                    "totalCnt": "10",
+                    "page": "1",
+                    "prec": [{"판례일련번호": str(i)} for i in range(2)],
+                }
+            }
+        )
+        with patch("judgment_search.client.requests.get", return_value=page1) as mock_get:
+            result = client.search_precedents_all("테스트", max_results=2, delay=0)
+
+        self.assertEqual(len(result["items"]), 2)
+        mock_get.assert_called_once()
+
+    def test_search_precedents_all_stops_on_empty_page(self):
+        client = LawGoKrClient(oc="test")
+        empty = _mock_response({"PrecSearch": {"totalCnt": "0", "page": "1"}})
+        with patch("judgment_search.client.requests.get", return_value=empty):
+            result = client.search_precedents_all("없음", max_results=50, delay=0)
+
+        self.assertEqual(result["items"], [])
+
 
 if __name__ == "__main__":
     unittest.main()
