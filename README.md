@@ -8,7 +8,19 @@
 2. "오픈API 신청" 메뉴에서 API 이용 신청 (승인까지 다소 시간이 걸릴 수 있습니다)
 3. 승인 후 마이페이지 > "API인증키관리"에서 실제 OC 값을 확인합니다 (가입 이메일과 다를 수 있음)
 
-## 2. 설치
+## 2-0. Windows에서 더블클릭으로 바로 실행하기 (가장 쉬운 방법)
+
+law.go.kr은 한국 정부 사이트라 **해외 클라우드 서버(Colab, Codespaces 등)에서는 접속이 차단**됩니다.
+반드시 한국 인터넷을 쓰는 본인 PC에서 실행해야 합니다.
+
+1. Python이 없다면 https://www.python.org/downloads/ 에서 설치 (설치 시 **"Add python.exe to PATH" 체크 필수**)
+2. 이 저장소를 ZIP으로 다운로드해서 압축 풀기
+   (GitHub 페이지 → 초록색 "Code" 버튼 → "Download ZIP")
+3. 압축 푼 폴더 안의 **`run_compare.bat`** 파일을 더블클릭
+4. 검은 창이 뜨면 OC 값을 입력하고 Enter
+5. 결과가 `compare_results` 폴더에 저장됩니다 (창은 자동으로 닫히지 않고 대기합니다)
+
+## 2. 설치 (수동으로 명령어를 입력하고 싶은 경우)
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
