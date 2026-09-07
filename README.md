@@ -6,7 +6,7 @@
 
 1. https://open.law.go.kr 접속 후 회원가입
 2. "오픈API 신청" 메뉴에서 API 이용 신청 (승인까지 다소 시간이 걸릴 수 있습니다)
-3. 승인 후 발급되는 값은 가입 시 사용한 **이메일의 `@` 앞부분**입니다. 예: `abc@gmail.com` → `OC=abc`
+3. 승인 후 마이페이지 > "API인증키관리"에서 실제 OC 값을 확인합니다 (가입 이메일과 다를 수 있음)
 
 ## 2. 설치
 
@@ -21,6 +21,23 @@ OC 값은 환경변수로 등록하거나 매 명령마다 `--oc` 옵션으로 �
 cp .env.example .env   # 편집해서 LAW_GO_KR_OC 값 채우기
 export $(grep -v '^#' .env | xargs)
 ```
+
+### GitHub Codespaces에서 실행하기
+
+터미널 설치 없이 브라우저에서 실행하고 싶다면 Codespaces를 쓸 수 있습니다.
+
+1. GitHub 저장소 페이지에서 이 브랜치(`claude/judgment-auto-search-feasibility-yx9swi`)로 이동
+2. 초록색 "Code" 버튼 → "Codespaces" 탭 → "Create codespace on ..." 클릭
+3. 몇 분 기다리면 브라우저 안에 VS Code 화면이 뜨고, 하단 터미널에 `pip install -r requirements.txt`가 자동 실행되어 있습니다
+4. 터미널에 다음을 입력해 실행:
+   ```bash
+   export LAW_GO_KR_OC=발급받은OC값
+   python -m judgment_search compare
+   ```
+
+> **주의:** law.go.kr은 한국 정부(.go.kr) 사이트라 해외 서버에서 접속 시 DNS 조회 자체가
+> 차단될 수 있습니다. Codespaces는 보통 해외 리전에서 실행되므로 동일한 문제가 발생할 수
+> 있습니다. 이 경우 한국 내 네트워크(가정/회사 인터넷)를 쓰는 PC에서 직접 실행해야 합니다.
 
 ## 3. 사용법
 
