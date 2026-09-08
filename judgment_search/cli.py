@@ -5,8 +5,10 @@ import csv
 import json
 import os
 import sys
+import time
 
 from .client import SCOPE_CASE_NAME, SCOPE_FULLTEXT, LawGoKrClient, LawGoKrError
+from .pdf_export import FontNotFoundError, save_detail_as_pdf
 
 _SCOPE_MAP = {"case_name": SCOPE_CASE_NAME, "fulltext": SCOPE_FULLTEXT}
 
@@ -29,6 +31,9 @@ def cmd_search(args):
     )
     items = result["items"]
 
+    if args.pdf_dir:
+        _save_items_as_pdfs(client, items, args.pdf_dir, args.font)
+
     if args.out:
         _save(items, args.out)
         print(
@@ -50,6 +55,10 @@ def cmd_detail(args):
     if not detail:
         print("결과가 없습니다. ID를 확인하세요.", file=sys.stderr)
         sys.exit(1)
+
+    if args.pdf:
+        _save_detail_pdf(detail, args.pdf, args.font)
+        print(f"PDF 저장 완료 -> {args.pdf}")
 
     if args.out:
         _save(detail, args.out)
@@ -91,6 +100,10 @@ def cmd_compare(args):
         _save(items, out_path)
         results.append((label, query, result["total_count"], items, out_path))
 
+        if args.pdf:
+            pdf_dir = os.path.join(args.out_dir, f"{_safe_filename(label)}_pdf")
+            _save_items_as_pdfs(client, items, pdf_dir, args.font)
+
     print("검색 결과 요약")
     print("-" * 60)
     for label, query, total_count, items, out_path in results:
@@ -115,6 +128,33 @@ def cmd_compare(args):
             print(f"  - {prec_id}")
     else:
         print("두 그룹 간 중복된 판례는 없습니다.")
+
+
+def _save_detail_pdf(detail, path, font_path=None):
+    try:
+        save_detail_as_pdf(detail, path, font_path=font_path)
+    except FontNotFoundError as exc:
+        raise LawGoKrError(str(exc)) from exc
+
+
+def _save_items_as_pdfs(client, items, out_dir, font_path=None):
+    """검색 결과 목록(요약 정보만 있음)을 받아 각 판례의 상세를 조회한 뒤
+
+    개별 PDF 파일로 저장한다.
+    """
+    os.makedirs(out_dir, exist_ok=True)
+    print(f"{len(items)}건을 PDF로 저장합니다 (폴더: {out_dir})...")
+    for i, item in enumerate(items, 1):
+        prec_id = item.get("판례일련번호")
+        if not prec_id:
+            continue
+        detail = client.get_precedent_detail(prec_id)
+        case_no = detail.get("사건번호") or prec_id
+        filename = f"{_safe_filename(str(case_no))}_{prec_id}.pdf"
+        path = os.path.join(out_dir, filename)
+        _save_detail_pdf(detail, path, font_path)
+        print(f"  [{i}/{len(items)}] {path}")
+        time.sleep(0.2)
 
 
 def _safe_filename(label):
@@ -158,11 +198,21 @@ def build_parser():
         help="검색 범위: case_name(사건명/죄명) 또는 fulltext(본문). 미지정 시 API 기본값 사용",
     )
     p_search.add_argument("--out", help="결과를 저장할 파일 경로 (.json 또는 .csv)")
+    p_search.add_argument(
+        "--pdf-dir", help="검색된 판례 각각의 상세를 조회해 PDF로 저장할 폴더"
+    )
+    p_search.add_argument(
+        "--font", help="PDF에 사용할 한글 TTF 폰트 경로 (미지정 시 OS 기본 폰트 자동 탐색)"
+    )
     p_search.set_defaults(func=cmd_search)
 
     p_detail = sub.add_parser("detail", help="판례일련번호로 상세(전문) 조회")
     p_detail.add_argument("id", help="판례일련번호 (search 결과의 대괄호 안 번호)")
     p_detail.add_argument("--out", help="결과를 저장할 파일 경로 (.json)")
+    p_detail.add_argument("--pdf", help="상세 내용을 저장할 PDF 파일 경로")
+    p_detail.add_argument(
+        "--font", help="PDF에 사용할 한글 TTF 폰트 경로 (미지정 시 OS 기본 폰트 자동 탐색)"
+    )
     p_detail.set_defaults(func=cmd_detail)
 
     p_compare = sub.add_parser(
@@ -185,6 +235,14 @@ def build_parser():
     )
     p_compare.add_argument(
         "--out-dir", default="compare_results", help="결과 json을 저장할 디렉터리 (기본 compare_results)"
+    )
+    p_compare.add_argument(
+        "--pdf",
+        action="store_true",
+        help="각 그룹의 판례를 개별 PDF로도 저장 (out-dir 하위 <이름표>_pdf 폴더)",
+    )
+    p_compare.add_argument(
+        "--font", help="PDF에 사용할 한글 TTF 폰트 경로 (미지정 시 OS 기본 폰트 자동 탐색)"
     )
     p_compare.set_defaults(func=cmd_compare)
 

@@ -122,6 +122,29 @@ python3 -m judgment_search compare \
 > 처음 실행 후 건수가 0건이거나 예상보다 적게 나오면 `--query1`/`--query2`를
 > 조정하거나 `--scope fulltext`(본문 검색)로 바꿔 재시도해 보세요.
 
+### 판례를 PDF로 개별 다운로드하기
+
+law.go.kr Open API는 PDF를 직접 주지 않고 텍스트(JSON)만 제공합니다. 이 도구는
+받은 텍스트(사건명/판시사항/판결요지/전문)를 판례 1건당 PDF 파일 1개로 직접 만들어줍니다.
+
+`compare`에 `--pdf`를 추가하면 두 그룹 각각의 판례를 `<out-dir>/<이름표>_pdf/` 폴더에
+개별 PDF로 저장합니다 (검색 결과 건수만큼 상세 조회를 추가로 하므로 시간이 더 걸립니다):
+
+```bash
+python3 -m judgment_search compare --pdf
+```
+
+`search`나 `detail` 명령에도 사용할 수 있습니다:
+
+```bash
+python3 -m judgment_search search "부당해고" --pdf-dir pdfs/
+python3 -m judgment_search detail 228541 --pdf 228541.pdf
+```
+
+PDF에 한글을 표시하려면 시스템에 한글 폰트가 있어야 하며, 이 도구는 Windows(맑은 고딕),
+Mac(AppleGothic) 등 OS 기본 한글 폰트를 자동으로 찾아 사용합니다. 자동으로 못 찾으면
+`--font "폰트파일경로.ttf"` 옵션으로 직접 지정하세요.
+
 ## 4. 테스트
 
 ```bash

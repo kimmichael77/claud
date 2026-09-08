@@ -22,10 +22,16 @@ if [ -z "$LAW_GO_KR_OC" ]; then
     export LAW_GO_KR_OC
 fi
 
+read -p "각 판례를 PDF 파일로도 저장할까요? 판례 수만큼 시간이 더 걸립니다 (y/N): " WANT_PDF
+PDF_OPT=()
+if [[ "$WANT_PDF" =~ ^[Yy]$ ]]; then
+    PDF_OPT=(--pdf)
+fi
+
 echo
 echo "검색을 시작합니다..."
 echo
-python3 -m judgment_search compare
+python3 -m judgment_search compare "${PDF_OPT[@]}"
 
 echo
 echo "완료되었습니다. compare_results 폴더를 확인하세요."
