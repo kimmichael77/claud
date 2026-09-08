@@ -20,6 +20,19 @@ law.go.kr은 한국 정부 사이트라 **해외 클라우드 서버(Colab, Code
 4. 검은 창이 뜨면 OC 값을 입력하고 Enter
 5. 결과가 `compare_results` 폴더에 저장됩니다 (창은 자동으로 닫히지 않고 대기합니다)
 
+## 2-0-b. Mac에서 더블클릭으로 바로 실행하기
+
+1. Python이 없다면 터미널(Spotlight에서 "터미널" 검색)에서 `python3 --version`으로 확인.
+   없으면 https://www.python.org/downloads/ 에서 설치하거나 `brew install python3`
+2. 이 저장소를 ZIP으로 다운로드해서 압축 풀기
+   (GitHub 페이지 → 초록색 "Code" 버튼 → "Download ZIP")
+3. 압축 푼 폴더 안의 **`run_compare.command`** 파일을 더블클릭
+4. macOS가 "확인되지 않은 개발자" 경고를 띄우면:
+   - 파일을 **마우스 오른쪽 클릭(또는 control+클릭) → "열기"** 선택 → 다시 뜨는 창에서 "열기" 클릭
+     (한 번만 이렇게 열면 다음부터는 그냥 더블클릭 가능)
+5. 터미널 창이 뜨면 OC 값을 입력하고 Enter
+6. 결과가 `compare_results` 폴더에 저장됩니다
+
 ## 2. 설치 (수동으로 명령어를 입력하고 싶은 경우)
 
 ```bash
