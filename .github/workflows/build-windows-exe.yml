@@ -9,6 +9,9 @@ on:
       - "case_extractor/**"
       - ".github/workflows/build-windows-exe.yml"
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
@@ -43,3 +46,19 @@ jobs:
           name: PanryeCodingConverter-windows-exe
           path: case_extractor/dist/PanryeCodingConverter.exe
           retention-days: 30
+
+      - name: Publish to "windows-exe-latest" release
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          gh release delete windows-exe-latest --yes --repo "$GITHUB_REPOSITORY" || true
+          git tag -f windows-exe-latest
+          git push -f origin windows-exe-latest
+          gh release create windows-exe-latest \
+            dist/PanryeCodingConverter.exe \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "판례 코딩시트 변환기 (Windows exe, 최신)" \
+            --notes "가장 최근 커밋(${{ github.sha }})으로 빌드된 Windows용 실행파일입니다. 아래 Assets에서 PanryeCodingConverter.exe를 다운로드하세요." \
+            --latest
