@@ -38,6 +38,9 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 매번 새 터미널을 열 때마다 다시 설정해야 하는 게 번거로우면, `~/.zshrc`에
 위 줄을 추가해두세요.
 
+**API 키가 없거나 만들고 싶지 않다면** 아래 "수동 모드"를 이용하면 API 키 없이
+claude.ai 채팅(구독 중인 것)으로 똑같이 진행할 수 있습니다.
+
 ## 윈도우용 더블클릭 실행파일(.exe) 만들기
 
 ### 방법 A: 윈도우에 Python을 설치할 수 없는 경우 — GitHub에서 자동으로 빌드된 exe 받기
@@ -92,6 +95,47 @@ python3 gui.py
 판결문처럼 보이지 않는 파일(엉뚱한 문서 등)은 자동으로 감지되어 노란색 경고로
 표시되고 건너뜁니다: "이 파일은 판결문이 아닌 것 같습니다. 올바른 판결문 파일이
 맞는지 다시 확인한 뒤 넣어주세요." 이런 메시지가 뜨면 원본 파일을 다시 확인해보세요.
+
+## 수동 모드 — Anthropic API 키 없이 claude.ai 채팅으로 진행하기
+
+GUI의 **"✂️ 수동 모드 (API 키 없이)"** 탭에서 진행합니다. Anthropic API 키(유료,
+종량제) 대신 이미 쓰고 있는 claude.ai 웹 채팅 구독을 그대로 활용하는 방식입니다.
+과정이 API 모드보다 손이 더 가지만 추가 비용이 들지 않습니다.
+
+1. **판결문 선택**: 폴더 전체 또는 파일 개별 선택으로 판결문을 고릅니다.
+2. **1단계 — 프롬프트 파일 만들기**: 저장할 폴더를 고르고 버튼을 누르면, 판결문마다
+   `이름.prompt.txt` 파일이 만들어집니다. 이 안에 코딩북 규칙 + 판결문 전문이 이미
+   들어있습니다.
+3. 만들어진 `.prompt.txt` 파일을 하나씩 열어 **내용 전체를 복사**해서 claude.ai
+   채팅창(https://claude.ai)에 붙여넣고 전송합니다. 받은 답변(JSON 형태)을 **전체
+   복사**해서, 판결문과 **같은 이름**의 `.json` 파일로 저장합니다
+   (예: `판결문1.pdf` → `판결문1.json`). 모든 판결문에 대해 이 과정을 반복하고,
+   `.json` 파일들을 한 폴더(예: `responses`)에 모아둡니다.
+4. **2단계 — 응답을 엑셀로 합치기**: 코딩시트 템플릿, 위에서 만든 응답 폴더, 결과
+   저장 위치를 지정하고 버튼을 누르면 엑셀이 완성됩니다.
+
+CLI로도 동일하게 할 수 있습니다:
+
+```bash
+# 1단계: 프롬프트 생성
+python3 -m case_extractor.manual_cli make-prompts \
+  --input-dir ~/Desktop/판결문모음 \
+  --prompts-dir ~/Desktop/prompts
+
+# (여기서 각 prompts/*.prompt.txt 를 claude.ai에 붙여넣고,
+#  응답을 responses/이름.json 으로 저장)
+
+# 2단계: 엑셀로 합치기
+python3 -m case_extractor.manual_cli import \
+  --template ~/Desktop/코딩시트.xlsx \
+  --input-dir ~/Desktop/판결문모음 \
+  --responses-dir ~/Desktop/responses \
+  --output ~/Desktop/코딩시트_결과.xlsx \
+  --coder-id C1
+```
+
+수동 모드로 만든 행의 `coding_note`에는 `[AI 추출-수동]` 표시가 붙습니다. API
+모드와 마찬가지로 원문과 대조 검수가 필요합니다.
 
 ## 사용법 2: 터미널(CLI)로 실행 — 여러 배치를 자동화하고 싶다면 추천
 

@@ -77,10 +77,10 @@ def extract_fields(case_text: str, *, model: str | None = None, max_chars: int =
     )
 
     raw = "".join(block.text for block in response.content if getattr(block, "type", None) == "text")
-    return _parse_json_response(raw)
+    return parse_json_response(raw)
 
 
-def _parse_json_response(raw: str) -> dict:
+def parse_json_response(raw: str) -> dict:
     raw = raw.strip()
     # 코드블록으로 감싸져 오는 경우 대비
     if raw.startswith("```"):
