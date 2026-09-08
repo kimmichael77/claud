@@ -40,6 +40,22 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## 윈도우용 더블클릭 실행파일(.exe) 만들기
 
+### 방법 A: 윈도우에 Python을 설치할 수 없는 경우 — GitHub에서 자동으로 빌드된 exe 받기
+
+이 저장소는 GitHub Actions로 실제 윈도우 서버에서 exe를 자동으로 빌드하도록
+설정되어 있습니다. 여러분의 컴퓨터에는 아무것도 설치할 필요가 없습니다.
+
+1. GitHub 저장소 페이지에서 **Actions** 탭을 클릭합니다.
+2. 왼쪽에서 **"Build Windows exe"** 워크플로우를 선택합니다.
+3. **"Run workflow"** 버튼을 눌러 원하는 브랜치를 선택하고 실행합니다.
+   (이미 `case_extractor/` 코드가 바뀔 때마다 자동으로도 실행됩니다.)
+4. 몇 분 뒤 실행이 끝나면 그 실행 결과 페이지 하단의 **Artifacts** 항목에서
+   `PanryeCodingConverter-windows-exe`를 클릭해 다운로드합니다 (zip 파일로 받아집니다).
+5. 압축을 풀면 `PanryeCodingConverter.exe`가 나옵니다. 더블클릭하면 바로 실행됩니다.
+   (GitHub 로그인이 되어 있어야 Artifacts를 다운로드할 수 있습니다.)
+
+### 방법 B: 윈도우 컴퓨터에 Python 설치가 가능한 경우 — 직접 빌드
+
 Python 설치 없이 바로 쓸 수 있는 `.exe` 파일을 직접 만들 수 있습니다
 (빌드는 윈도우 컴퓨터에서 딱 한 번만 하면 되고, 이후에는 만들어진 exe 파일만
 공유하면 됩니다).
