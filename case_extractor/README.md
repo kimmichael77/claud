@@ -81,18 +81,37 @@ source .venv/bin/activate
 python3 gui.py
 ```
 
-1. "코딩시트 템플릿" 에 원본 코딩시트 xlsx 선택
-2. "판결문 폴더" 에 PDF/DOCX 파일들이 모여 있는 폴더 선택
-3. "결과 저장 위치" 확인 (자동으로 `_결과.xlsx`로 채워짐)
-4. coder_id, API 키 입력 후 "변환 시작"
+1. "판결문 입력"에서 **폴더에서 전체 선택** 또는 **파일 개별 선택**(여러 개 동시 선택 가능)으로
+   PDF/DOCX 파일을 추가합니다. 두 방식을 섞어서 계속 추가할 수도 있고, "비우기"로 초기화할 수 있습니다.
+2. "코딩시트 템플릿"에 원본 코딩시트 xlsx 선택
+3. "결과 저장 위치" 확인 (템플릿을 선택하면 자동으로 `_결과.xlsx`로 채워짐)
+4. coder_id, API 키 입력 후 "▶ 변환 시작"
+5. 처리 중 멈추고 싶으면 "■ 중지"를 누르면 진행 중인 파일까지만 처리하고 멈춥니다
+   (이미 처리된 결과는 그대로 저장됩니다).
+
+판결문처럼 보이지 않는 파일(엉뚱한 문서 등)은 자동으로 감지되어 노란색 경고로
+표시되고 건너뜁니다: "이 파일은 판결문이 아닌 것 같습니다. 올바른 판결문 파일이
+맞는지 다시 확인한 뒤 넣어주세요." 이런 메시지가 뜨면 원본 파일을 다시 확인해보세요.
 
 ## 사용법 2: 터미널(CLI)로 실행 — 여러 배치를 자동화하고 싶다면 추천
+
+폴더 전체를 넣거나:
 
 ```bash
 source .venv/bin/activate
 python3 -m case_extractor.cli \
   --template ~/Desktop/코딩시트.xlsx \
   --input-dir ~/Desktop/판결문모음 \
+  --output ~/Desktop/코딩시트_결과.xlsx \
+  --coder-id C1
+```
+
+또는 파일을 하나씩 지정할 수도 있습니다 (`--input-dir` 대신 `--input-files`):
+
+```bash
+python3 -m case_extractor.cli \
+  --template ~/Desktop/코딩시트.xlsx \
+  --input-files ~/Desktop/판결문1.pdf ~/Desktop/판결문2.docx \
   --output ~/Desktop/코딩시트_결과.xlsx \
   --coder-id C1
 ```
@@ -104,6 +123,11 @@ python3 -m case_extractor.cli \
   https://docs.anthropic.com/en/docs/about-claude/models 에서 현재 사용 가능한
   모델 ID를 확인해 이 옵션으로 지정하세요.
 - `--dry-run` : 엑셀에 쓰지 않고 추출 결과만 화면에 출력 (테스트용)
+- `--skip-judgment-check` : 판결문 여부 사전 검사를 건너뜁니다 (기본적으로는 판결문처럼
+  보이지 않는 파일을 자동으로 걸러내고 안내 메시지를 띄웁니다. 권장하지 않지만 필요하면 사용하세요)
+
+CLI는 Ctrl+C로 언제든 중지할 수 있습니다 (이미 처리된 결과는 저장되지 않으니, 중간에
+저장하고 싶다면 GUI의 "중지" 버튼을 이용하세요).
 
 ## 파일 형식 관련 주의사항
 
@@ -117,7 +141,8 @@ python3 -m case_extractor.cli \
 코딩북 내용이 바뀌면 이 파일도 함께 고쳐야 LLM 추출 결과가 최신 정의를 따릅니다.
 자동 계산되는 4개 항목(`duration`, `appeal_duration`, `guideline_rel_position`,
 `area_rel_position`)과 이탈 관련 2개 항목(`guideline_deviation`, `deviation_direction`)의
-계산식은 `case_extractor/compute.py`에 있습니다.
+계산식은 `case_extractor/compute.py`에 있습니다. 판결문 여부를 판단하는 표지 문구
+목록은 `case_extractor/validate.py`의 `JUDGMENT_MARKERS`에 있습니다.
 
 ## 정확도에 대한 당부
 
