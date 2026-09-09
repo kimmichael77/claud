@@ -9,11 +9,19 @@
     붙여넣고, 받은 JSON 답변 전체를 같은 이름(.json)으로 responses 폴더에
     저장하세요. 예: 판결문1.pdf -> prompts/판결문1.prompt.txt -> responses/판결문1.json
 
-2단계 (엑셀로 합치기):
+2단계 (엑셀로 합치기): 응답 폴더로 지정하거나,
     python3 -m case_extractor.manual_cli import \\
         --template ~/Desktop/코딩시트.xlsx \\
         --input-dir ~/Desktop/판결문모음 \\
         --responses-dir ~/Desktop/responses \\
+        --output ~/Desktop/코딩시트_결과.xlsx \\
+        --coder-id C1
+
+    또는 응답 파일을 폴더 정리 없이 개별 지정 (--responses-dir 대신 --response-files):
+    python3 -m case_extractor.manual_cli import \\
+        --template ~/Desktop/코딩시트.xlsx \\
+        --input-dir ~/Desktop/판결문모음 \\
+        --response-files ~/Desktop/판결문1.json ~/Desktop/판결문2.json \\
         --output ~/Desktop/코딩시트_결과.xlsx \\
         --coder-id C1
 """
@@ -26,7 +34,7 @@ from pathlib import Path
 
 from .excel_writer import write_rows
 from .llm_extract import LLMExtractError
-from .manual_mode import build_row, load_response, make_prompt_file
+from .manual_mode import build_row, load_response, make_prompt_file, read_response_file
 from .text_extract import TextExtractError, find_case_files
 from .validate import NotJudgmentLikelyError
 
@@ -35,6 +43,18 @@ def _collect_files(args: argparse.Namespace) -> list[Path]:
     if args.input_dir is not None:
         return find_case_files(args.input_dir)
     return args.input_files
+
+
+def _load_response_for(f: Path, args: argparse.Namespace) -> dict:
+    """--response-files로 지정된 개별 파일을 우선 찾고, 없으면 --responses-dir 폴더에서 찾는다."""
+    if args.response_files:
+        for path in args.response_files:
+            if path.stem == f.stem:
+                return read_response_file(path)
+        raise LLMExtractError(
+            f"{f.name}: --response-files 목록에서 이름이 같은 응답 파일('{f.stem}.json' 등)을 찾지 못했습니다."
+        )
+    return load_response(f, args.responses_dir)
 
 
 def cmd_make_prompts(args: argparse.Namespace) -> int:
@@ -69,7 +89,7 @@ def cmd_import(args: argparse.Namespace) -> int:
     errors: list[str] = []
     for f in files:
         try:
-            extracted = load_response(f, args.responses_dir)
+            extracted = _load_response_for(f, args)
             rows.append(build_row(f, extracted, coder_id=args.coder_id))
         except LLMExtractError as e:
             print(f"  건너뜀: {e}", file=sys.stderr)
@@ -104,7 +124,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     im = sub.add_parser("import", parents=[common], help="claude.ai 응답(JSON)들을 엑셀로 합치기")
     im.add_argument("--template", required=True, type=Path)
-    im.add_argument("--responses-dir", required=True, type=Path, help="응답(.json/.txt) 파일들이 있는 폴더")
+    responses_group = im.add_mutually_exclusive_group(required=True)
+    responses_group.add_argument("--responses-dir", type=Path, help="응답(.json/.txt) 파일들이 있는 폴더")
+    responses_group.add_argument(
+        "--response-files", type=Path, nargs="+",
+        help="응답(.json/.txt) 파일 경로 목록 (폴더로 미리 정리할 필요 없이 개별 지정)",
+    )
     im.add_argument("--output", required=True, type=Path)
     im.add_argument("--coder-id", default="")
     im.add_argument("--id-prefix", default="DF-2024-")

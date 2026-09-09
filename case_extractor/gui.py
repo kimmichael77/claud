@@ -20,7 +20,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from case_extractor.cli import process_file
 from case_extractor.excel_writer import write_rows
 from case_extractor.llm_extract import LLMExtractError, parse_json_response
-from case_extractor.manual_mode import build_row, load_response, make_prompt_file
+from case_extractor.manual_mode import build_row, load_response, make_prompt_file, read_response_file
 from case_extractor.text_extract import TextExtractError, find_case_files
 from case_extractor.validate import NotJudgmentLikelyError
 
@@ -56,6 +56,7 @@ class App(tk.Tk):
         self.prompts_dir = tk.StringVar()
         self.manual_template_path = tk.StringVar()
         self.responses_dir = tk.StringVar()
+        self.manual_response_files: dict[str, Path] = {}  # stem -> path, 엑셀 합치기 단계에서 폴더 대신 파일 개별 선택 시 사용
         self.manual_output_path = tk.StringVar()
         self.manual_coder_id = tk.StringVar()
 
@@ -529,6 +530,17 @@ class App(tk.Tk):
         ttk.Label(card4, text="4. 응답을 엑셀로 합치기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
         self._labeled_path_row(card4, "코딩시트 템플릿 (xlsx)", self.manual_template_path, self._manual_pick_template)
         self._labeled_path_row(card4, "응답(.json) 폴더", self.responses_dir, self._manual_pick_responses_dir)
+
+        or_row = ttk.Frame(card4, style="Card.TFrame")
+        or_row.pack(fill="x", pady=(0, 8))
+        ttk.Label(or_row, text="", width=18).pack(side="left")
+        ttk.Button(or_row, text="또는 응답 파일 개별 선택", style="Ghost.TButton",
+                   command=self._manual_pick_response_files_for_import).pack(side="left")
+        ttk.Button(or_row, text="선택 지우기", style="Ghost.TButton",
+                   command=self._manual_clear_response_files_for_import).pack(side="left", padx=8)
+        self.manual_response_files_label = ttk.Label(or_row, text="", style="Muted.TLabel")
+        self.manual_response_files_label.pack(side="left", padx=8)
+
         self._labeled_path_row(card4, "결과 저장 위치 (xlsx)", self.manual_output_path, self._manual_pick_output)
 
         row = ttk.Frame(card4, style="Card.TFrame")
@@ -744,6 +756,23 @@ class App(tk.Tk):
         finally:
             self.after(0, lambda: self.manual_prompts_btn.config(state="normal"))
 
+    def _manual_pick_response_files_for_import(self):
+        paths = filedialog.askopenfilenames(
+            title="claude.ai 응답 파일 선택 (여러 개 가능)",
+            filetypes=[("JSON/텍스트 파일", "*.json *.txt"), ("모든 파일", "*.*")],
+        )
+        if not paths:
+            return
+        for p in paths:
+            path = Path(p)
+            self.manual_response_files[path.stem] = path
+        n = len(self.manual_response_files)
+        self.manual_response_files_label.config(text=f"{n}개 파일 선택됨 (폴더 대신 사용)")
+
+    def _manual_clear_response_files_for_import(self):
+        self.manual_response_files = {}
+        self.manual_response_files_label.config(text="")
+
     def _manual_import(self):
         if not self.manual_files:
             messagebox.showerror("오류", "판결문 파일을 먼저 선택하세요 (1단계와 동일한 파일이어야 합니다).")
@@ -751,8 +780,12 @@ class App(tk.Tk):
         if not self.manual_template_path.get() or not self.manual_output_path.get():
             messagebox.showerror("오류", "코딩시트 템플릿과 결과 저장 위치를 선택하세요.")
             return
-        if not self.responses_dir.get():
-            messagebox.showerror("오류", "claude.ai 응답(.json)이 들어있는 폴더를 선택하세요.")
+        if not self.responses_dir.get() and not self.manual_response_files:
+            messagebox.showerror(
+                "오류",
+                "claude.ai 응답을 지정하세요 — '응답(.json) 폴더'를 선택하거나, "
+                "'또는 응답 파일 개별 선택'으로 파일을 직접 골라도 됩니다.",
+            )
             return
         self.manual_import_btn.config(state="disabled")
         threading.Thread(target=self._manual_import_worker, daemon=True).start()
@@ -762,12 +795,26 @@ class App(tk.Tk):
             files = list(self.manual_files)
             self._init_stats(len(files))
             self._set_mode_status("수동 모드: 저장된 응답들을 엑셀로 합치고 있습니다.")
-            responses_dir = Path(self.responses_dir.get())
-            self._log(f"{len(files)}개 파일의 응답을 불러옵니다 (응답 폴더: {responses_dir})...")
+
+            use_files = bool(self.manual_response_files)
+            if use_files:
+                self._log(f"{len(files)}개 파일의 응답을 불러옵니다 (개별 선택한 {len(self.manual_response_files)}개 파일 사용)...")
+            else:
+                responses_dir = Path(self.responses_dir.get())
+                self._log(f"{len(files)}개 파일의 응답을 불러옵니다 (응답 폴더: {responses_dir})...")
+
             rows = []
             for f in files:
                 try:
-                    extracted = load_response(f, responses_dir)
+                    if use_files:
+                        match = self.manual_response_files.get(f.stem)
+                        if match is None:
+                            raise LLMExtractError(
+                                f"{f.name}: 개별 선택한 파일 중 이름이 같은 응답('{f.stem}.json' 등)이 없습니다."
+                            )
+                        extracted = read_response_file(match)
+                    else:
+                        extracted = load_response(f, Path(self.responses_dir.get()))
                     rows.append(build_row(f, extracted, coder_id=self.manual_coder_id.get()))
                     self._log(f"  불러옴: {f.name}", "ok")
                     self._bump_stat("done")
@@ -780,11 +827,15 @@ class App(tk.Tk):
                     Path(self.manual_template_path.get()), Path(self.manual_output_path.get()), rows
                 )
             else:
+                where = (
+                    f"개별 선택한 {len(self.manual_response_files)}개 파일 중"
+                    if use_files else f"'{self.responses_dir.get()}' 폴더에"
+                )
                 msg = (
                     "불러올 수 있는 응답이 없어 엑셀을 만들지 못했습니다.\n\n"
                     "위 '진행 상황' 로그에 파일마다 건너뛴 이유가 표시되어 있습니다. 자주 있는 원인:\n"
                     f"1) 응답 파일 이름이 판결문과 다름 — '판결문1.pdf'의 응답은 반드시 "
-                    f"'{responses_dir}' 폴더에 '판결문1.json' 이라는 이름으로 저장되어야 합니다.\n"
+                    f"{where} '판결문1.json' 이라는 이름으로 있어야 합니다.\n"
                     "2) claude.ai 답변이 JSON 형식이 아님 — 답변에 설명 문구나 거절 메시지가 섞여 있으면 "
                     "안 됩니다. JSON 객체만 붙여넣거나, 응답 전체를 그대로 붙여넣어 보세요."
                 )

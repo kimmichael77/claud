@@ -157,14 +157,19 @@ python3 gui.py
    자동으로 올바른 이름(`판결문1.json` 등)으로 저장되고, 곧바로 다음 판결문으로
    넘어갑니다. 화면에 몇 개 중 몇 개가 저장됐는지 표시됩니다. 이 과정을 판결문마다
    반복합니다.
-4. **응답을 엑셀로 합치기**: 코딩시트 템플릿, 위에서 응답을 저장한 폴더, 결과
-   저장 위치를 지정하고 버튼을 누르면 엑셀이 완성됩니다.
+4. **응답을 엑셀로 합치기**: 코딩시트 템플릿과 결과 저장 위치를 지정하고, 응답은
+   **폴더**로 지정하거나(기본) **"또는 응답 파일 개별 선택"** 버튼으로 `.json`/`.txt`
+   파일을 폴더 정리 없이 여러 개 바로 골라도 됩니다 (파일명이 판결문과 같아야
+   인식됩니다). 둘 중 하나만 지정하면 되고, 파일을 선택해두면 폴더보다 우선 사용됩니다.
+   버튼을 누르면 엑셀이 완성됩니다.
 
 **이미 만들어 둔 .json 응답 파일이 있다면** (다른 도구로 미리 만들었거나, 예전에
 저장해둔 파일 등) "응답 붙여넣어 저장하기" 칸의 **"📄 이미 있는 JSON 파일 추가"**
 버튼으로 폴더 정리 없이 바로 추가할 수 있습니다. 여러 개를 한 번에 선택할 수 있고,
 파일명이 판결문과 같기만 하면(`판결문1.pdf` → `판결문1.json`) 응답 저장 폴더로
-자동 복사됩니다.
+자동 복사됩니다. (이건 응답 저장 폴더 자체에 파일을 채워 넣는 방식이고, 위 4단계의
+"응답 파일 개별 선택"은 폴더에 넣지 않고 그 자리에서 바로 골라 합치는 방식입니다 —
+둘 중 편한 쪽을 쓰세요.)
 
 (CLI에는 붙여넣기 저장 기능이 없어 파일로 직접 저장해야 합니다. 붙여넣기로 편하게
 하려면 GUI를 이용하세요.) CLI로도 동일한 흐름을 할 수 있습니다:
@@ -178,11 +183,19 @@ python3 -m case_extractor.manual_cli make-prompts \
 # (여기서 각 prompts/*.prompt.txt 를 claude.ai에 붙여넣고,
 #  응답을 responses/이름.json 으로 저장)
 
-# 2단계: 엑셀로 합치기
+# 2단계: 엑셀로 합치기 (응답을 폴더로 지정)
 python3 -m case_extractor.manual_cli import \
   --template ~/Desktop/코딩시트.xlsx \
   --input-dir ~/Desktop/판결문모음 \
   --responses-dir ~/Desktop/responses \
+  --output ~/Desktop/코딩시트_결과.xlsx \
+  --coder-id C1
+
+# 또는 응답 파일을 폴더 정리 없이 개별 지정 (--responses-dir 대신 --response-files)
+python3 -m case_extractor.manual_cli import \
+  --template ~/Desktop/코딩시트.xlsx \
+  --input-dir ~/Desktop/판결문모음 \
+  --response-files ~/Desktop/판결문1.json ~/Desktop/판결문2.json \
   --output ~/Desktop/코딩시트_결과.xlsx \
   --coder-id C1
 ```

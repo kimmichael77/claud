@@ -50,13 +50,18 @@ def make_prompt_file(source: Path, out_dir: Path, *, skip_judgment_check: bool =
     return out_path
 
 
+def read_response_file(path: Path) -> dict:
+    """응답 파일 하나를 읽어 JSON으로 파싱한다 (경로를 직접 아는 경우)."""
+    raw = path.read_text(encoding="utf-8")
+    return parse_json_response(raw)
+
+
 def load_response(source: Path, responses_dir: Path) -> dict:
-    """source와 이름이 같은 응답 파일(.json 또는 .txt)을 찾아 JSON으로 파싱한다."""
+    """source와 이름이 같은 응답 파일(.json 또는 .txt)을 폴더에서 찾아 JSON으로 파싱한다."""
     for ext in (".json", ".txt"):
         candidate = responses_dir / f"{source.stem}{ext}"
         if candidate.exists():
-            raw = candidate.read_text(encoding="utf-8")
-            return parse_json_response(raw)
+            return read_response_file(candidate)
     raise LLMExtractError(
         f"{source.name}: 응답 파일을 찾지 못했습니다 "
         f"({responses_dir} 폴더에 '{source.stem}.json' 또는 '{source.stem}.txt' 파일이 있어야 합니다)"
