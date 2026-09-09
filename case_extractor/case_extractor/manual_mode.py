@@ -20,14 +20,19 @@ from .validate import NotJudgmentLikelyError, looks_like_judgment
 MAX_CHARS = 180_000
 
 
-def build_prompt(case_text: str, *, max_chars: int = MAX_CHARS) -> str:
+def build_prompt(case_text: str, *, response_filename: str | None = None, max_chars: int = MAX_CHARS) -> str:
     text = case_text[:max_chars]
-    return (
-        SYSTEM_PROMPT
-        + "\n\n다음은 판결문 전문입니다. 위 규칙에 따라 코딩시트 JSON을 출력하세요. "
-          "다른 설명 없이 JSON 객체 하나만 출력하세요.\n\n[판결문]\n"
-        + text
+    instructions = (
+        "\n\n다음은 판결문 전문입니다. 위 규칙에 따라 코딩시트 JSON을 출력하세요. "
+        "다른 설명 없이 JSON 객체 하나만 출력하세요."
     )
+    if response_filename:
+        instructions += (
+            f"\n\n[파일명 안내] 응답을 다운로드 가능한 파일로 만들어 줄 수 있다면, "
+            f"파일명을 정확히 \"{response_filename}\" 으로 해주세요. "
+            "파일로 만들 수 없다면 채팅 답변에 JSON 객체만 그대로 출력해도 됩니다."
+        )
+    return SYSTEM_PROMPT + instructions + "\n\n[판결문]\n" + text
 
 
 def make_prompt_file(source: Path, out_dir: Path, *, skip_judgment_check: bool = False) -> Path:
@@ -40,7 +45,8 @@ def make_prompt_file(source: Path, out_dir: Path, *, skip_judgment_check: bool =
 
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / f"{source.stem}.prompt.txt"
-    out_path.write_text(build_prompt(text), encoding="utf-8")
+    prompt = build_prompt(text, response_filename=f"{source.stem}.json")
+    out_path.write_text(prompt, encoding="utf-8")
     return out_path
 
 
