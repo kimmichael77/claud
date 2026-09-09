@@ -311,14 +311,40 @@ class App(tk.Tk):
                     self.progress.step(1)
 
             if rows:
-                out = write_rows(Path(self.template_path.get()), Path(self.output_path.get()), rows)
-                self._log(f"완료: {len(rows)}건을 {out} 에 저장했습니다.", "ok")
-                self._log("주의: AI가 추출한 값이므로 coding_note에 [AI 추출] 표시가 된 행은 원문과 대조 검수하세요.", "warn")
+                self._safe_write_rows(Path(self.template_path.get()), Path(self.output_path.get()), rows)
             elif not self._stop_event.is_set():
                 self._log("저장할 결과가 없습니다.", "warn")
+        except Exception as e:  # 예상 못한 오류도 화면에 반드시 표시한다
+            self._log(f"예상치 못한 오류로 중단됨: {e}", "err")
+            self._show_error(str(e))
         finally:
             self.run_btn.config(state="normal")
             self.stop_btn.config(state="disabled")
+
+    # ---------- 공통 유틸 ----------
+    def _safe_write_rows(self, template: Path, output: Path, rows: list[dict]) -> None:
+        """엑셀 저장을 시도하고, 실패하면 원인을 화면에 명확히 표시한다."""
+        try:
+            out = write_rows(template, output, rows)
+            self._log(f"완료: {len(rows)}건을 {out} 에 저장했습니다.", "ok")
+            self._log("주의: AI가 추출한 값이므로 coding_note에 [AI 추출] 표시가 된 행은 원문과 대조 검수하세요.", "warn")
+        except PermissionError:
+            msg = (
+                f"엑셀 파일을 저장하지 못했습니다: {output}\n\n"
+                "이 파일이 Excel(또는 다른 프로그램)에서 이미 열려 있어서 저장이 막혔을 가능성이 큽니다. "
+                "그 파일을 닫은 뒤 다시 시도해주세요."
+            )
+            self._log(f"저장 실패(파일이 열려 있는 것 같습니다): {output}", "err")
+            self._show_error(msg)
+        except FileNotFoundError as e:
+            self._log(f"저장 실패: {e}", "err")
+            self._show_error(f"템플릿 또는 저장 경로를 찾을 수 없습니다.\n{e}")
+        except Exception as e:
+            self._log(f"저장 실패: {e}", "err")
+            self._show_error(f"엑셀 저장 중 오류가 발생했습니다.\n{e}")
+
+    def _show_error(self, message: str):
+        self.after(0, lambda: messagebox.showerror("오류", message))
 
     # ================= 수동 모드 =================
     def _build_manual_tab(self, parent):
@@ -363,8 +389,9 @@ class App(tk.Tk):
         outer3.pack(fill="x", pady=(0, 12))
         ttk.Label(card3, text="2. 1단계 — 프롬프트 파일 만들기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
         self._labeled_path_row(card3, "프롬프트 저장 폴더", self.prompts_dir, self._manual_pick_prompts_dir)
-        ttk.Button(card3, text="📝  프롬프트 파일 만들기", style="Accent.TButton",
-                   command=self._manual_make_prompts).pack(anchor="w", pady=(6, 0))
+        self.manual_prompts_btn = ttk.Button(card3, text="📝  프롬프트 파일 만들기", style="Accent.TButton",
+                                             command=self._manual_make_prompts)
+        self.manual_prompts_btn.pack(anchor="w", pady=(6, 0))
 
         # 2단계
         outer4, card4 = self._card(parent)
@@ -379,8 +406,9 @@ class App(tk.Tk):
         ttk.Label(row, text="코딩 담당자 ID", style="Card.TLabel", width=18).pack(side="left")
         ttk.Entry(row, textvariable=self.manual_coder_id, width=16).pack(side="left")
 
-        ttk.Button(card4, text="📊  엑셀로 합치기", style="Accent.TButton",
-                   command=self._manual_import).pack(anchor="w", pady=(6, 0))
+        self.manual_import_btn = ttk.Button(card4, text="📊  엑셀로 합치기", style="Accent.TButton",
+                                            command=self._manual_import)
+        self.manual_import_btn.pack(anchor="w", pady=(6, 0))
 
     def _manual_pick_dir(self):
         path = filedialog.askdirectory()
@@ -440,24 +468,31 @@ class App(tk.Tk):
         if not self.prompts_dir.get():
             messagebox.showerror("오류", "프롬프트를 저장할 폴더를 선택하세요.")
             return
+        self.manual_prompts_btn.config(state="disabled")
         threading.Thread(target=self._manual_make_prompts_worker, daemon=True).start()
 
     def _manual_make_prompts_worker(self):
-        files = list(self.manual_files)
-        out_dir = Path(self.prompts_dir.get())
-        self._log(f"{len(files)}개 파일의 프롬프트를 만듭니다...")
-        made = 0
-        for f in files:
-            try:
-                out = make_prompt_file(f, out_dir)
-                self._log(f"  {f.name} -> {out.name}", "ok")
-                made += 1
-            except NotJudgmentLikelyError as e:
-                self._log(f"  건너뜀: {e}", "warn")
-            except TextExtractError as e:
-                self._log(f"  실패: {e}", "err")
-        self._log(f"완료: {made}개 프롬프트 파일을 {out_dir} 에 만들었습니다.", "ok")
-        self._log("각 .prompt.txt 내용을 claude.ai에 붙여넣고, 받은 JSON 응답을 같은 이름(.json)으로 저장하세요.", "warn")
+        try:
+            files = list(self.manual_files)
+            out_dir = Path(self.prompts_dir.get())
+            self._log(f"{len(files)}개 파일의 프롬프트를 만듭니다...")
+            made = 0
+            for f in files:
+                try:
+                    out = make_prompt_file(f, out_dir)
+                    self._log(f"  {f.name} -> {out.name}", "ok")
+                    made += 1
+                except NotJudgmentLikelyError as e:
+                    self._log(f"  건너뜀: {e}", "warn")
+                except TextExtractError as e:
+                    self._log(f"  실패: {e}", "err")
+            self._log(f"완료: {made}개 프롬프트 파일을 {out_dir} 에 만들었습니다.", "ok")
+            self._log("각 .prompt.txt 내용을 claude.ai에 붙여넣고, 받은 JSON 응답을 같은 이름(.json)으로 저장하세요.", "warn")
+        except Exception as e:
+            self._log(f"예상치 못한 오류로 중단됨: {e}", "err")
+            self._show_error(f"프롬프트 파일을 만드는 중 오류가 발생했습니다.\n{e}")
+        finally:
+            self.after(0, lambda: self.manual_prompts_btn.config(state="normal"))
 
     def _manual_import(self):
         if not self.manual_files:
@@ -469,28 +504,43 @@ class App(tk.Tk):
         if not self.responses_dir.get():
             messagebox.showerror("오류", "claude.ai 응답(.json)이 들어있는 폴더를 선택하세요.")
             return
+        self.manual_import_btn.config(state="disabled")
         threading.Thread(target=self._manual_import_worker, daemon=True).start()
 
     def _manual_import_worker(self):
-        files = list(self.manual_files)
-        responses_dir = Path(self.responses_dir.get())
-        rows = []
-        for f in files:
-            try:
-                extracted = load_response(f, responses_dir)
-                rows.append(build_row(f, extracted, coder_id=self.manual_coder_id.get()))
-                self._log(f"  불러옴: {f.name}", "ok")
-            except LLMExtractError as e:
-                self._log(f"  건너뜀: {e}", "warn")
+        try:
+            files = list(self.manual_files)
+            responses_dir = Path(self.responses_dir.get())
+            self._log(f"{len(files)}개 파일의 응답을 불러옵니다 (응답 폴더: {responses_dir})...")
+            rows = []
+            for f in files:
+                try:
+                    extracted = load_response(f, responses_dir)
+                    rows.append(build_row(f, extracted, coder_id=self.manual_coder_id.get()))
+                    self._log(f"  불러옴: {f.name}", "ok")
+                except LLMExtractError as e:
+                    self._log(f"  건너뜀: {e}", "warn")
 
-        if rows:
-            out = write_rows(
-                Path(self.manual_template_path.get()), Path(self.manual_output_path.get()), rows
-            )
-            self._log(f"완료: {len(rows)}건을 {out} 에 저장했습니다.", "ok")
-            self._log("주의: AI가 추출한 값이므로 coding_note에 [AI 추출-수동] 표시가 된 행은 원문과 대조 검수하세요.", "warn")
-        else:
-            self._log("저장할 결과가 없습니다. 응답 폴더에 파일명이 일치하는 .json이 있는지 확인하세요.", "warn")
+            if rows:
+                self._safe_write_rows(
+                    Path(self.manual_template_path.get()), Path(self.manual_output_path.get()), rows
+                )
+            else:
+                msg = (
+                    "불러올 수 있는 응답이 없어 엑셀을 만들지 못했습니다.\n\n"
+                    "위 '진행 상황' 로그에 파일마다 건너뛴 이유가 표시되어 있습니다. 자주 있는 원인:\n"
+                    f"1) 응답 파일 이름이 판결문과 다름 — '판결문1.pdf'의 응답은 반드시 "
+                    f"'{responses_dir}' 폴더에 '판결문1.json' 이라는 이름으로 저장되어야 합니다.\n"
+                    "2) claude.ai 답변이 JSON 형식이 아님 — 답변에 설명 문구나 거절 메시지가 섞여 있으면 "
+                    "안 됩니다. JSON 객체만 붙여넣거나, 응답 전체를 그대로 붙여넣어 보세요."
+                )
+                self._log("저장할 결과가 없습니다. 로그의 개별 건너뜀 사유를 확인하세요.", "warn")
+                self._show_error(msg)
+        except Exception as e:
+            self._log(f"예상치 못한 오류로 중단됨: {e}", "err")
+            self._show_error(f"엑셀로 합치는 중 오류가 발생했습니다.\n{e}")
+        finally:
+            self.after(0, lambda: self.manual_import_btn.config(state="normal"))
 
     # ---------- 로그 (공통) ----------
     def _build_log_card(self, parent):
