@@ -18,7 +18,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from case_extractor.cli import process_file
 from case_extractor.excel_writer import write_rows
-from case_extractor.llm_extract import LLMExtractError
+from case_extractor.llm_extract import LLMExtractError, parse_json_response
 from case_extractor.manual_mode import build_row, load_response, make_prompt_file
 from case_extractor.text_extract import TextExtractError, find_case_files
 from case_extractor.validate import NotJudgmentLikelyError
@@ -361,8 +361,8 @@ class App(tk.Tk):
                 "claude.ai 채팅창에 붙여넣을 텍스트(.txt)가 생성됩니다.\n"
                 "② 생성된 .txt 파일을 열어 내용 전체를 복사한 뒤, 평소 쓰는 claude.ai 채팅에 "
                 "붙여넣고 답장을 받습니다.\n"
-                "③ 받은 답변 전체(JSON)를 복사해서, 판결문과 같은 이름의 .json 파일로 응답 폴더에 "
-                "저장합니다. (예: 판결문1.pdf → 판결문1.json)\n"
+                "③ 받은 답변 전체(JSON)를 복사해서, 아래 '응답 붙여넣어 저장하기'에 붙여넣고 "
+                "저장 버튼을 누르면 파일명을 신경 쓰지 않아도 자동으로 올바른 이름으로 저장됩니다.\n"
                 "④ 모든 판결문의 응답을 다 모았으면 '엑셀로 합치기'를 눌러 코딩시트를 완성합니다."
             ),
         ).pack(anchor="w")
@@ -387,16 +387,45 @@ class App(tk.Tk):
         # 1단계
         outer3, card3 = self._card(parent)
         outer3.pack(fill="x", pady=(0, 12))
-        ttk.Label(card3, text="2. 1단계 — 프롬프트 파일 만들기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        ttk.Label(card3, text="2. 프롬프트 파일 만들기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
         self._labeled_path_row(card3, "프롬프트 저장 폴더", self.prompts_dir, self._manual_pick_prompts_dir)
         self.manual_prompts_btn = ttk.Button(card3, text="📝  프롬프트 파일 만들기", style="Accent.TButton",
                                              command=self._manual_make_prompts)
         self.manual_prompts_btn.pack(anchor="w", pady=(6, 0))
 
+        # 응답 붙여넣어 저장하기
+        outer_paste, card_paste = self._card(parent)
+        outer_paste.pack(fill="x", pady=(0, 12))
+        ttk.Label(card_paste, text="3. 응답 붙여넣어 저장하기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._labeled_path_row(card_paste, "응답 저장 폴더", self.responses_dir, self._manual_pick_responses_dir)
+
+        select_row = ttk.Frame(card_paste, style="Card.TFrame")
+        select_row.pack(fill="x", pady=(4, 6))
+        ttk.Label(select_row, text="판결문 선택", style="Card.TLabel", width=18).pack(side="left")
+        self.manual_paste_combo = ttk.Combobox(select_row, state="readonly", width=40)
+        self.manual_paste_combo.pack(side="left", fill="x", expand=True)
+        self.manual_paste_combo.bind("<<ComboboxSelected>>", self._manual_on_paste_select)
+
+        self.manual_paste_status_label = ttk.Label(card_paste, text="", style="Muted.TLabel")
+        self.manual_paste_status_label.pack(anchor="w", pady=(0, 6))
+
+        self.manual_paste_text = scrolledtext.ScrolledText(
+            card_paste, height=8, font=("Menlo", 10), bg="#fafafa", relief="flat",
+            highlightthickness=1, highlightbackground="#e5e7eb", padx=8, pady=6,
+        )
+        self.manual_paste_text.pack(fill="both", expand=True, pady=(0, 8))
+
+        paste_btn_row = ttk.Frame(card_paste, style="Card.TFrame")
+        paste_btn_row.pack(fill="x")
+        ttk.Button(paste_btn_row, text="💾  저장하고 다음 판결문으로", style="Accent.TButton",
+                   command=self._manual_save_pasted_response).pack(side="left")
+        ttk.Button(paste_btn_row, text="지우기", style="Ghost.TButton",
+                   command=lambda: self.manual_paste_text.delete("1.0", "end")).pack(side="left", padx=8)
+
         # 2단계
         outer4, card4 = self._card(parent)
         outer4.pack(fill="x", pady=(0, 0))
-        ttk.Label(card4, text="3. 2단계 — 응답을 엑셀로 합치기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        ttk.Label(card4, text="4. 응답을 엑셀로 합치기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
         self._labeled_path_row(card4, "코딩시트 템플릿 (xlsx)", self.manual_template_path, self._manual_pick_template)
         self._labeled_path_row(card4, "응답(.json) 폴더", self.responses_dir, self._manual_pick_responses_dir)
         self._labeled_path_row(card4, "결과 저장 위치 (xlsx)", self.manual_output_path, self._manual_pick_output)
@@ -433,10 +462,12 @@ class App(tk.Tk):
                 existing.add(str(f))
         n = len(self.manual_files)
         self.manual_file_count_label.config(text=f"{n}개 파일 선택됨" if n else "선택된 파일 없음")
+        self._manual_refresh_paste_combo()
 
     def _manual_clear_files(self):
         self.manual_files = []
         self.manual_file_count_label.config(text="선택된 파일 없음")
+        self._manual_refresh_paste_combo()
 
     def _manual_pick_prompts_dir(self):
         path = filedialog.askdirectory()
@@ -455,6 +486,90 @@ class App(tk.Tk):
         path = filedialog.askdirectory()
         if path:
             self.responses_dir.set(path)
+            self._manual_refresh_paste_combo()
+
+    # ---------- 응답 붙여넣어 저장하기 ----------
+    def _manual_file_by_name(self, name: str) -> Path | None:
+        for f in self.manual_files:
+            if f.name == name:
+                return f
+        return None
+
+    def _manual_response_exists(self, source: Path) -> bool:
+        responses_dir = self.responses_dir.get()
+        if not responses_dir:
+            return False
+        return (Path(responses_dir) / f"{source.stem}.json").exists()
+
+    def _manual_refresh_paste_combo(self):
+        names = [f.name for f in self.manual_files]
+        current = self.manual_paste_combo.get()
+        self.manual_paste_combo.config(values=names)
+        if current in names:
+            self.manual_paste_combo.set(current)
+        elif names:
+            # 아직 응답이 저장되지 않은 첫 파일을 기본 선택
+            not_done = [n for n in names if not self._manual_response_exists(self._manual_file_by_name(n))]
+            self.manual_paste_combo.set(not_done[0] if not_done else names[0])
+        else:
+            self.manual_paste_combo.set("")
+        self._manual_update_paste_status()
+
+    def _manual_update_paste_status(self):
+        name = self.manual_paste_combo.get()
+        if not name:
+            self.manual_paste_status_label.config(text="판결문을 먼저 선택하세요.")
+            return
+        source = self._manual_file_by_name(name)
+        done = source is not None and self._manual_response_exists(source)
+        total = len(self.manual_files)
+        saved = sum(1 for f in self.manual_files if self._manual_response_exists(f))
+        status = "✅ 이미 저장된 응답이 있습니다 (덮어쓰려면 그대로 저장하세요)" if done else "⬜ 아직 저장된 응답이 없습니다"
+        self.manual_paste_status_label.config(text=f"{status}   |   전체 {saved}/{total}개 저장됨")
+
+    def _manual_on_paste_select(self, event=None):
+        self._manual_update_paste_status()
+
+    def _manual_save_pasted_response(self):
+        if not self.manual_files:
+            messagebox.showerror("오류", "판결문 파일을 먼저 선택하세요.")
+            return
+        if not self.responses_dir.get():
+            messagebox.showerror("오류", "응답을 저장할 폴더를 먼저 선택하세요.")
+            return
+        name = self.manual_paste_combo.get()
+        source = self._manual_file_by_name(name)
+        if source is None:
+            messagebox.showerror("오류", "저장할 판결문을 목록에서 선택하세요.")
+            return
+        content = self.manual_paste_text.get("1.0", "end").strip()
+        if not content:
+            messagebox.showerror("오류", "claude.ai에서 받은 응답을 먼저 붙여넣으세요.")
+            return
+
+        responses_dir = Path(self.responses_dir.get())
+        responses_dir.mkdir(parents=True, exist_ok=True)
+        out_path = responses_dir / f"{source.stem}.json"
+        out_path.write_text(content, encoding="utf-8")
+
+        try:
+            parse_json_response(content)
+            self._log(f"저장됨: {out_path.name} (JSON 형식 확인됨)", "ok")
+        except Exception as e:
+            self._log(f"저장은 했지만 JSON 형식이 아닌 것 같습니다: {out_path.name} — {e}", "warn")
+            messagebox.showwarning(
+                "확인 필요",
+                f"{out_path.name}로 저장은 했지만, 내용이 올바른 JSON 형식인지 확인이 필요합니다.\n"
+                "claude.ai 응답 전체(설명 문구 없이 JSON 부분)를 다시 붙여넣어 보세요.",
+            )
+
+        self.manual_paste_text.delete("1.0", "end")
+
+        names = [f.name for f in self.manual_files]
+        not_done = [n for n in names if not self._manual_response_exists(self._manual_file_by_name(n))]
+        if not_done:
+            self.manual_paste_combo.set(not_done[0])
+        self._manual_update_paste_status()
 
     def _manual_pick_output(self):
         path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
