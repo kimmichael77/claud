@@ -61,6 +61,7 @@ class App(tk.Tk):
 
         self._log_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
         self._worker: threading.Thread | None = None
+        self._stats = {"total": 0, "done": 0, "skipped": 0, "failed": 0}
 
         self._build_style()
         self._build_widgets()
@@ -375,6 +376,8 @@ class App(tk.Tk):
     def _run(self):
         try:
             files = list(self.selected_files)
+            self._init_stats(len(files))
+            self._set_mode_status("API 모드로 판결문을 자동 처리하고 있습니다.")
             self._log(f"총 {len(files)}개 파일 처리 시작...")
             rows = []
 
@@ -388,10 +391,13 @@ class App(tk.Tk):
                     row = process_file(path, coder_id=self.coder_id.get(), model=None)
                     rows.append(row)
                     self._log(f"  완료: {path.name}", "ok")
+                    self._bump_stat("done")
                 except NotJudgmentLikelyError as e:
                     self._log(f"  건너뜀: {e}", "warn")
+                    self._bump_stat("skipped")
                 except (TextExtractError, LLMExtractError) as e:
                     self._log(f"  실패: {e}", "err")
+                    self._bump_stat("failed")
                 finally:
                     self.progress.step(1)
 
@@ -484,6 +490,16 @@ class App(tk.Tk):
         ttk.Label(card_paste, text="3. 응답 붙여넣어 저장하기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
         self._labeled_path_row(card_paste, "응답 저장 폴더", self.responses_dir, self._manual_pick_responses_dir)
 
+        ttk.Label(
+            card_paste,
+            style="Info.TLabel",
+            text="이미 다른 곳에서 만들어 둔 .json 응답 파일이 있다면, 폴더에 미리 옮겨둘 필요 없이 "
+                 "아래 버튼으로 바로 추가할 수 있습니다 (파일명이 판결문과 같아야 합니다).",
+            wraplength=520, justify="left",
+        ).pack(anchor="w", pady=(0, 4))
+        ttk.Button(card_paste, text="📄  이미 있는 JSON 파일 추가", style="Ghost.TButton",
+                   command=self._manual_add_response_files).pack(anchor="w", pady=(0, 10))
+
         select_row = ttk.Frame(card_paste, style="Card.TFrame")
         select_row.pack(fill="x", pady=(4, 6))
         ttk.Label(select_row, text="판결문 선택", style="Card.TLabel", width=18).pack(side="left")
@@ -572,6 +588,35 @@ class App(tk.Tk):
         if path:
             self.responses_dir.set(path)
             self._manual_refresh_paste_combo()
+
+    def _manual_add_response_files(self):
+        """이미 만들어져 있는 .json 응답 파일들을 폴더 정리 없이 바로 추가한다."""
+        if not self.responses_dir.get():
+            path = filedialog.askdirectory(title="응답을 모아둘 폴더를 선택하거나 새로 만드세요")
+            if not path:
+                return
+            self.responses_dir.set(path)
+
+        paths = filedialog.askopenfilenames(
+            title="claude.ai 응답이 저장된 JSON 파일 선택 (여러 개 가능)",
+            filetypes=[("JSON 파일", "*.json"), ("모든 파일", "*.*")],
+        )
+        if not paths:
+            return
+
+        dest_dir = Path(self.responses_dir.get())
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        copied = 0
+        for p in paths:
+            src = Path(p)
+            dest = dest_dir / src.name
+            if src.resolve() != dest.resolve():
+                dest.write_bytes(src.read_bytes())
+            copied += 1
+            self._log(f"응답 파일 추가됨: {src.name}", "ok")
+
+        self._log(f"{copied}개 JSON 파일을 '{dest_dir}' 에 추가했습니다.", "ok")
+        self._manual_refresh_paste_combo()
 
     # ---------- 응답 붙여넣어 저장하기 ----------
     def _manual_file_by_name(self, name: str) -> Path | None:
@@ -674,6 +719,8 @@ class App(tk.Tk):
     def _manual_make_prompts_worker(self):
         try:
             files = list(self.manual_files)
+            self._init_stats(len(files))
+            self._set_mode_status("수동 모드: 판결문마다 claude.ai용 프롬프트를 만들고 있습니다.")
             out_dir = Path(self.prompts_dir.get())
             self._log(f"{len(files)}개 파일의 프롬프트를 만듭니다...")
             made = 0
@@ -682,10 +729,13 @@ class App(tk.Tk):
                     out = make_prompt_file(f, out_dir)
                     self._log(f"  {f.name} -> {out.name}", "ok")
                     made += 1
+                    self._bump_stat("done")
                 except NotJudgmentLikelyError as e:
                     self._log(f"  건너뜀: {e}", "warn")
+                    self._bump_stat("skipped")
                 except TextExtractError as e:
                     self._log(f"  실패: {e}", "err")
+                    self._bump_stat("failed")
             self._log(f"완료: {made}개 프롬프트 파일을 {out_dir} 에 만들었습니다.", "ok")
             self._log("각 .prompt.txt 내용을 claude.ai에 붙여넣고, 받은 JSON 응답을 같은 이름(.json)으로 저장하세요.", "warn")
         except Exception as e:
@@ -710,6 +760,8 @@ class App(tk.Tk):
     def _manual_import_worker(self):
         try:
             files = list(self.manual_files)
+            self._init_stats(len(files))
+            self._set_mode_status("수동 모드: 저장된 응답들을 엑셀로 합치고 있습니다.")
             responses_dir = Path(self.responses_dir.get())
             self._log(f"{len(files)}개 파일의 응답을 불러옵니다 (응답 폴더: {responses_dir})...")
             rows = []
@@ -718,8 +770,10 @@ class App(tk.Tk):
                     extracted = load_response(f, responses_dir)
                     rows.append(build_row(f, extracted, coder_id=self.manual_coder_id.get()))
                     self._log(f"  불러옴: {f.name}", "ok")
+                    self._bump_stat("done")
                 except LLMExtractError as e:
                     self._log(f"  건너뜀: {e}", "warn")
+                    self._bump_stat("skipped")
 
             if rows:
                 self._safe_write_rows(
@@ -742,8 +796,22 @@ class App(tk.Tk):
         finally:
             self.after(0, lambda: self.manual_import_btn.config(state="normal"))
 
-    # ---------- 로그 (공통) ----------
+    # ---------- 요약 + 로그 (공통, 화면 오른쪽) ----------
     def _build_log_card(self, parent):
+        stats_outer, stats_card = self._card(parent)
+        stats_outer.pack(fill="x", pady=(0, 10))
+        ttk.Label(stats_card, text="현재 작업 요약", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+
+        tiles = ttk.Frame(stats_card, style="Card.TFrame")
+        tiles.pack(fill="x")
+        self.stat_total_label = self._stat_tile(tiles, "총 파일", "#111827")
+        self.stat_done_label = self._stat_tile(tiles, "완료", "#16a34a")
+        self.stat_skipped_label = self._stat_tile(tiles, "건너뜀", "#d97706")
+        self.stat_failed_label = self._stat_tile(tiles, "실패", "#dc2626")
+
+        self.mode_status_label = ttk.Label(stats_card, text="", style="Muted.TLabel", wraplength=280)
+        self.mode_status_label.pack(anchor="w", pady=(10, 0))
+
         outer, card = self._card(parent)
         outer.pack(fill="both", expand=True)
 
@@ -756,6 +824,33 @@ class App(tk.Tk):
         self.log.tag_config("warn", foreground="#fbbf24")
         self.log.tag_config("err", foreground="#f87171")
         self.log.tag_config("ok", foreground="#4ade80")
+
+    def _stat_tile(self, parent, label, color) -> ttk.Label:
+        tile = ttk.Frame(parent, style="Card.TFrame")
+        tile.pack(side="left", expand=True, fill="x")
+        value_label = ttk.Label(tile, text="0", style="Card.TLabel", font=("Helvetica", 18, "bold"), foreground=color)
+        value_label.pack(anchor="w")
+        ttk.Label(tile, text=label, style="Muted.TLabel").pack(anchor="w")
+        return value_label
+
+    # ---------- 작업 요약 카운터 ----------
+    def _init_stats(self, total: int):
+        self._stats = {"total": total, "done": 0, "skipped": 0, "failed": 0}
+        self.after(0, self._refresh_stats_labels)
+
+    def _bump_stat(self, key: str):
+        self._stats[key] = self._stats.get(key, 0) + 1
+        self.after(0, self._refresh_stats_labels)
+
+    def _refresh_stats_labels(self):
+        s = self._stats
+        self.stat_total_label.config(text=str(s["total"]))
+        self.stat_done_label.config(text=str(s["done"]))
+        self.stat_skipped_label.config(text=str(s["skipped"]))
+        self.stat_failed_label.config(text=str(s["failed"]))
+
+    def _set_mode_status(self, text: str):
+        self.after(0, lambda: self.mode_status_label.config(text=text))
 
     def _log(self, msg: str, tag: str | None = None):
         self._log_queue.put((msg, tag))
