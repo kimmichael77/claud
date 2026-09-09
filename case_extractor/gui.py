@@ -2,9 +2,10 @@
 
 실행: python3 gui.py
 
-두 가지 탭이 있습니다:
+화면 위쪽의 큰 버튼 두 개로 모드를 고릅니다:
 - "API 모드": Anthropic API 키가 있을 때. 자동으로 끝까지 처리합니다.
 - "수동 모드": API 키가 없을 때. claude.ai 웹 채팅에 복사/붙여넣기로 진행합니다.
+왼쪽에 선택한 모드의 입력/설정이, 오른쪽에는 항상 "진행 상황" 로그가 보입니다.
 """
 
 from __future__ import annotations
@@ -38,9 +39,9 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("판례 코딩시트 변환기")
-        self.geometry("760x820")
+        self.geometry("1180x760")
         self.configure(bg=BG)
-        self.minsize(680, 680)
+        self.minsize(980, 620)
 
         # API 모드 상태
         self.template_path = tk.StringVar()
@@ -83,8 +84,17 @@ class App(tk.Tk):
         style.configure("Info.TLabel", background=CARD_BG, font=("Helvetica", 10), foreground=TEXT_MUTED)
         style.configure("TEntry", padding=6)
         style.configure("TCheckbutton", background=CARD_BG, font=FONT_BASE)
-        style.configure("TNotebook", background=BG, borderwidth=0)
-        style.configure("TNotebook.Tab", font=FONT_BOLD, padding=(16, 10))
+        style.configure(
+            "ModeOn.TButton", font=("Helvetica", 13, "bold"), padding=(18, 14),
+            background=ACCENT, foreground="white", borderwidth=0,
+        )
+        style.map("ModeOn.TButton", background=[("active", ACCENT_DARK)])
+
+        style.configure(
+            "ModeOff.TButton", font=("Helvetica", 13, "bold"), padding=(18, 14),
+            background="#e5e7eb", foreground="#374151", borderwidth=0,
+        )
+        style.map("ModeOff.TButton", background=[("active", "#d1d5db")])
 
         style.configure(
             "Accent.TButton", font=FONT_BOLD, padding=(14, 10),
@@ -108,6 +118,33 @@ class App(tk.Tk):
         card.pack(fill="both", expand=True)
         return outer, card
 
+    def _scrollable(self, parent) -> ttk.Frame:
+        """세로로 스크롤되는 영역을 만들고, 그 안에 내용을 채울 프레임을 반환한다."""
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
+        vscroll = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+        inner = ttk.Frame(canvas, style="TFrame")
+        inner_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+
+        def _on_inner_configure(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def _on_canvas_configure(event):
+            canvas.itemconfig(inner_id, width=event.width)
+
+        inner.bind("<Configure>", _on_inner_configure)
+        canvas.bind("<Configure>", _on_canvas_configure)
+        canvas.configure(yscrollcommand=vscroll.set)
+
+        def _on_mousewheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
+        canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        canvas.pack(side="left", fill="both", expand=True)
+        vscroll.pack(side="right", fill="y")
+        return inner
+
     def _labeled_path_row(self, card, label, var, command, width=18):
         row = ttk.Frame(card, style="Card.TFrame")
         row.pack(fill="x", pady=(0, 8))
@@ -127,18 +164,66 @@ class App(tk.Tk):
             style="TLabel", foreground=TEXT_MUTED,
         ).pack(anchor="w", pady=(2, 14))
 
-        notebook = ttk.Notebook(root)
-        notebook.pack(fill="x")
+        self._build_mode_selector(root)
 
-        api_tab = ttk.Frame(notebook, style="TFrame", padding=(0, 14, 0, 0))
-        manual_tab = ttk.Frame(notebook, style="TFrame", padding=(0, 14, 0, 0))
-        notebook.add(api_tab, text="🔑 API 모드")
-        notebook.add(manual_tab, text="✂️ 수동 모드 (API 키 없이)")
+        body = ttk.Frame(root, style="TFrame")
+        body.pack(fill="both", expand=True, pady=(14, 0))
+        body.columnconfigure(0, weight=3, minsize=400)
+        body.columnconfigure(1, weight=2, minsize=280)
+        body.rowconfigure(0, weight=1)
 
-        self._build_api_tab(api_tab)
-        self._build_manual_tab(manual_tab)
+        left_outer = ttk.Frame(body, style="TFrame")
+        left_outer.grid(row=0, column=0, sticky="nsew", padx=(0, 16))
+        left_content = self._scrollable(left_outer)
 
-        self._build_log_card(root)
+        self.api_container = ttk.Frame(left_content, style="TFrame")
+        self.manual_container = ttk.Frame(left_content, style="TFrame")
+        self._build_api_tab(self.api_container)
+        self._build_manual_tab(self.manual_container)
+
+        log_outer = ttk.Frame(body, style="TFrame")
+        log_outer.grid(row=0, column=1, sticky="nsew")
+        self._build_log_card(log_outer)
+
+        self._set_mode("api")
+
+    def _build_mode_selector(self, parent):
+        row = ttk.Frame(parent, style="TFrame")
+        row.pack(fill="x")
+
+        self.mode_api_btn = ttk.Button(
+            row, text="🔑  API 모드\nAPI 키로 자동 처리", style="ModeOn.TButton",
+            command=lambda: self._set_mode("api"),
+        )
+        self.mode_api_btn.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+        self.mode_manual_btn = ttk.Button(
+            row, text="✂️  수동 모드\nAPI 키 없이 claude.ai 채팅 이용", style="ModeOff.TButton",
+            command=lambda: self._set_mode("manual"),
+        )
+        self.mode_manual_btn.pack(side="left", fill="x", expand=True, padx=(6, 0))
+
+        self.mode_desc_label = ttk.Label(parent, text="", style="TLabel", foreground=TEXT_MUTED)
+        self.mode_desc_label.pack(anchor="w", pady=(8, 0))
+
+    def _set_mode(self, mode: str):
+        self.mode = mode
+        if mode == "api":
+            self.mode_api_btn.configure(style="ModeOn.TButton")
+            self.mode_manual_btn.configure(style="ModeOff.TButton")
+            self.manual_container.pack_forget()
+            self.api_container.pack(fill="both", expand=True)
+            self.mode_desc_label.config(
+                text="현재 선택: API 모드 — Anthropic API 키가 있으면 버튼 한 번으로 끝까지 자동 처리합니다 (사용량만큼 별도 과금)."
+            )
+        else:
+            self.mode_manual_btn.configure(style="ModeOn.TButton")
+            self.mode_api_btn.configure(style="ModeOff.TButton")
+            self.api_container.pack_forget()
+            self.manual_container.pack(fill="both", expand=True)
+            self.mode_desc_label.config(
+                text="현재 선택: 수동 모드 — API 키 없이, 이미 쓰는 claude.ai 채팅에 복사/붙여넣기로 진행합니다 (추가 비용 없음)."
+            )
 
     # ================= API 모드 =================
     def _build_api_tab(self, parent):
@@ -660,12 +745,12 @@ class App(tk.Tk):
     # ---------- 로그 (공통) ----------
     def _build_log_card(self, parent):
         outer, card = self._card(parent)
-        outer.pack(fill="both", expand=True, pady=(14, 0))
+        outer.pack(fill="both", expand=True)
 
         ttk.Label(card, text="진행 상황", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
         self.log = scrolledtext.ScrolledText(
             card, height=10, font=("Menlo", 10), bg="#0f172a", fg="#e2e8f0",
-            insertbackground="#e2e8f0", relief="flat", padx=10, pady=8,
+            insertbackground="#e2e8f0", relief="flat", padx=10, pady=8, wrap="word",
         )
         self.log.pack(fill="both", expand=True)
         self.log.tag_config("warn", foreground="#fbbf24")

@@ -32,19 +32,23 @@ jobs:
           pip install pyinstaller
 
       - name: Build exe
-        run: >
-          pyinstaller --noconfirm --onefile --windowed
-          --name PanryeCodingConverter
-          --collect-all pdfplumber
-          --collect-all pypdfium2
-          --collect-all anthropic
-          --hidden-import docx
-          gui.py
+        shell: bash
+        run: |
+          set -e
+          EXE_NAME="PanryeCodingConverter-v${{ github.run_number }}"
+          echo "EXE_NAME=$EXE_NAME" >> "$GITHUB_ENV"
+          pyinstaller --noconfirm --onefile --windowed \
+            --name "$EXE_NAME" \
+            --collect-all pdfplumber \
+            --collect-all pypdfium2 \
+            --collect-all anthropic \
+            --hidden-import docx \
+            gui.py
 
       - uses: actions/upload-artifact@v4
         with:
           name: PanryeCodingConverter-windows-exe
-          path: case_extractor/dist/PanryeCodingConverter.exe
+          path: case_extractor/dist/${{ env.EXE_NAME }}.exe
           retention-days: 30
 
       - name: Publish versioned release (kept permanently)
@@ -55,10 +59,10 @@ jobs:
           set -e
           VERSION_TAG="windows-exe-v${{ github.run_number }}"
           gh release create "$VERSION_TAG" \
-            dist/PanryeCodingConverter.exe \
+            "dist/${EXE_NAME}.exe" \
             --repo "$GITHUB_REPOSITORY" \
             --title "판례 코딩시트 변환기 (Windows exe) v${{ github.run_number }}" \
-            --notes "커밋 ${{ github.sha }} 으로 빌드된 버전입니다. 이 버전은 새 빌드가 나와도 삭제되지 않고 그대로 남아있습니다."
+            --notes "커밋 ${{ github.sha }} 으로 빌드된 버전입니다. 실행파일 이름: ${EXE_NAME}.exe — 이 버전은 새 빌드가 나와도 삭제되지 않고 그대로 남아있습니다."
 
       - name: Publish/update "windows-exe-latest" rolling release
         shell: bash
@@ -70,8 +74,8 @@ jobs:
           git tag -f windows-exe-latest
           git push -f origin windows-exe-latest
           gh release create windows-exe-latest \
-            dist/PanryeCodingConverter.exe \
+            "dist/${EXE_NAME}.exe" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "판례 코딩시트 변환기 (Windows exe, 최신)" \
-            --notes "가장 최근 커밋(${{ github.sha }})으로 빌드된 Windows용 실행파일입니다. 아래 Assets에서 PanryeCodingConverter.exe를 다운로드하세요. 이전 버전들은 저장소의 Releases 목록(windows-exe-v1, v2, ...)에서 계속 받을 수 있습니다." \
+            --title "판례 코딩시트 변환기 (Windows exe, 최신) - ${EXE_NAME}" \
+            --notes "가장 최근 커밋(${{ github.sha }})으로 빌드된 Windows용 실행파일입니다 (파일명: ${EXE_NAME}.exe). 이전 버전들은 저장소의 Releases 목록(windows-exe-v1, v2, ...)에서 계속 받을 수 있습니다." \
             --latest

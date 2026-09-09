@@ -50,9 +50,11 @@ claude.ai 채팅(구독 중인 것)으로 똑같이 진행할 수 있습니다.
 있습니다. 여러분의 컴퓨터에는 아무것도 설치할 필요가 없습니다.
 
 1. 저장소 페이지 오른쪽의 **Releases** (또는 `저장소주소/releases/tag/windows-exe-latest`)로 들어갑니다.
-2. **Assets** 목록에서 `PanryeCodingConverter.exe`를 클릭하면 바로 다운로드됩니다
-   (압축 파일이 아니라 exe 파일 그대로입니다).
-3. 다운로드한 `PanryeCodingConverter.exe`를 더블클릭하면 바로 실행됩니다.
+2. **Assets** 목록에서 `PanryeCodingConverter-v숫자.exe` (예: `PanryeCodingConverter-v9.exe`)를
+   클릭하면 바로 다운로드됩니다 (압축 파일이 아니라 exe 파일 그대로입니다). 파일명에 버전
+   번호가 들어있어서, 여러 버전을 받아도 서로 구분되고 어떤 버전을 쓰고 있는지 파일명만
+   보고 알 수 있습니다.
+3. 다운로드한 exe 파일을 더블클릭하면 바로 실행됩니다.
 
 `case_extractor/` 코드가 바뀔 때마다 이 릴리스는 자동으로 최신 버전으로 갱신됩니다.
 (예전에 쓰던 Actions "Artifacts" 다운로드 버튼은 화면에 잘 보이지 않는 경우가
