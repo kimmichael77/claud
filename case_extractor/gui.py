@@ -159,7 +159,13 @@ class App(tk.Tk):
         root = ttk.Frame(self, style="TFrame", padding=20)
         root.pack(fill="both", expand=True)
 
-        ttk.Label(root, text="판례 코딩시트 변환기", style="Title.TLabel").pack(anchor="w")
+        title_row = ttk.Frame(root, style="TFrame")
+        title_row.pack(fill="x")
+        ttk.Label(title_row, text="판례 코딩시트 변환기", style="Title.TLabel").pack(side="left")
+        ttk.Button(
+            title_row, text="↺  전체 초기화", style="Ghost.TButton", command=self._reset_all,
+        ).pack(side="right")
+
         ttk.Label(
             root,
             text="판결문(PDF/DOCX)을 넣으면 코딩시트 엑셀 항목을 자동으로 채워줍니다.",
@@ -207,6 +213,41 @@ class App(tk.Tk):
 
         self.mode_desc_label = ttk.Label(parent, text="", style="TLabel", foreground=TEXT_MUTED)
         self.mode_desc_label.pack(anchor="w", pady=(8, 0))
+
+    def _reset_all(self):
+        """API/수동 모드에서 입력한 모든 내용, 로그, 진행 상황을 처음 상태로 되돌린다."""
+        if not messagebox.askyesno("전체 초기화", "입력한 모든 내용을 지우고 처음 상태로 되돌릴까요?"):
+            return
+
+        # API 모드
+        self.template_path.set("")
+        self.output_path.set("")
+        self.coder_id.set("")
+        self.api_key.set(os.environ.get("ANTHROPIC_API_KEY", ""))
+        self.selected_files = []
+        self._refresh_file_list()
+        self.progress.config(value=0)
+
+        # 수동 모드
+        self.manual_files = []
+        self.prompts_dir.set("")
+        self.manual_template_path.set("")
+        self.responses_dir.set("")
+        self.manual_response_files = {}
+        self.manual_output_path.set("")
+        self.manual_coder_id.set("")
+        self.manual_file_count_label.config(text="선택된 파일 없음")
+        self.manual_response_files_label.config(text="")
+        self.manual_paste_text.delete("1.0", "end")
+        self._manual_refresh_paste_combo()
+
+        # 요약 + 로그
+        self.log.delete("1.0", "end")
+        self._stats = {"total": 0, "done": 0, "skipped": 0, "failed": 0}
+        self._refresh_stats_labels()
+        self.mode_status_label.config(text="")
+
+        self._log("전체 입력을 초기화했습니다.", "warn")
 
     def _set_mode(self, mode: str):
         self.mode = mode
