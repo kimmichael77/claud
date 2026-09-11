@@ -50,7 +50,7 @@ FONT_TITLE = (_FONT, 17, "bold")
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("판례 코딩시트 변환기")
+        self.title("Case Law Coding Sheet Converter")
         self.geometry("1200x780")
         self.configure(bg=BG)
         self.minsize(1000, 640)
@@ -209,7 +209,7 @@ class App(tk.Tk):
 
         title_text = tk.Frame(title_row, bg=BG)
         title_text.pack(side="left")
-        tk.Label(title_text, text="판례 코딩시트 변환기", bg=BG, fg=TEXT,
+        tk.Label(title_text, text="Case Law Coding Sheet Converter", bg=BG, fg=TEXT,
                  font=(_FONT, 18, "bold")).pack(anchor="w")
         tk.Label(title_text, text="판결문(PDF/DOCX) → 코딩시트 엑셀 자동 변환",
                  bg=BG, fg=TEXT_MUTED, font=(_FONT, 10)).pack(anchor="w")
