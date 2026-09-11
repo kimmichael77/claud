@@ -132,6 +132,29 @@ class App(tk.Tk):
         badge.pack(side="left")
         ttk.Label(row, text=f"  {text}", style="Section.TLabel").pack(side="left")
 
+    def _add_text_context_menu(self, widget):
+        """텍스트 위젯에 우클릭 붙여넣기/복사/잘라내기 컨텍스트 메뉴를 추가한다."""
+        menu = tk.Menu(widget, tearoff=0)
+        menu.add_command(label="붙여넣기 (Paste)",
+                         command=lambda: widget.event_generate("<<Paste>>"))
+        menu.add_command(label="복사 (Copy)",
+                         command=lambda: widget.event_generate("<<Copy>>"))
+        menu.add_command(label="잘라내기 (Cut)",
+                         command=lambda: widget.event_generate("<<Cut>>"))
+        menu.add_separator()
+        menu.add_command(label="전체 선택 (Select All)",
+                         command=lambda: widget.tag_add("sel", "1.0", "end"))
+
+        def _show_menu(event):
+            try:
+                menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                menu.grab_release()
+
+        widget.bind("<Button-3>", _show_menu)
+        if _platform.system() == "Darwin":
+            widget.bind("<Button-2>", _show_menu)
+
     def _scrollable(self, parent) -> ttk.Frame:
         """세로로 스크롤되는 영역을 만들고, 그 안에 내용을 채울 프레임을 반환한다."""
         canvas = tk.Canvas(parent, bg=BG, highlightthickness=0)
@@ -588,6 +611,7 @@ class App(tk.Tk):
             padx=10, pady=8,
         )
         self.manual_paste_text.pack(fill="both", expand=True, pady=(0, 8))
+        self._add_text_context_menu(self.manual_paste_text)
 
         paste_btn_row = ttk.Frame(card_paste, style="Card.TFrame")
         paste_btn_row.pack(fill="x")
