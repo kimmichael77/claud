@@ -49,7 +49,7 @@ def write_rows(
     output_path: Path,
     rows: list[dict],
     *,
-    id_prefix: str = "DF-2024-",
+    id_prefix: str = "DF-2026-",
 ) -> Path:
     """rows(각 항목이 SHEET_COLUMN_ORDER 키를 갖는 dict)를 템플릿에 이어붙여 output_path에 저장한다."""
     if output_path != template_path:

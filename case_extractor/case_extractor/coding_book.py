@@ -23,7 +23,7 @@ class FieldDef:
 
 
 CODING_BOOK: list[FieldDef] = [
-    FieldDef("case_id", "식별", "사건 고유 식별번호", "연구자 부여 (예: DF-2024-001)", "확정", manual=True),
+    FieldDef("case_id", "식별", "사건 고유 식별번호", "연구자 부여 (예: DF-2026-001)", "확정", manual=True),
     FieldDef("case_type", "식별/비교군", "사건 유형(핵심 비교변수)",
              "0=몰카(카메라등이용촬영, 제14조), 1=딥페이크(허위영상물, 제14조의2). 본 연구의 핵심 비교축", "확정"),
     FieldDef("start_date", "시간", "관찰 시작일", "공소제기일 기준, 불명 시 1심 최초 공판일 (YYYY-MM-DD)", "확정"),
