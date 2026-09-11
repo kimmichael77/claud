@@ -18,7 +18,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 from case_extractor.cli import process_file
-from case_extractor.excel_writer import write_rows
+from case_extractor.excel_writer import notes_path_for, write_rows
 from case_extractor.llm_extract import LLMExtractError, parse_json_response
 from case_extractor.manual_mode import build_row, load_response, make_prompt_file, read_response_file
 from case_extractor.text_extract import TextExtractError, find_case_files
@@ -460,6 +460,9 @@ class App(tk.Tk):
         try:
             out = write_rows(template, output, rows)
             self._log(f"완료: {len(rows)}건을 {out} 에 저장했습니다.", "ok")
+            notes = notes_path_for(out)
+            if notes.exists():
+                self._log(f"코딩노트: {notes}", "ok")
             self._log("주의: AI가 추출한 값이므로 coding_note에 [AI 추출] 표시가 된 행은 원문과 대조 검수하세요.", "warn")
         except PermissionError:
             msg = (

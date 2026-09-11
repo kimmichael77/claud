@@ -7,10 +7,13 @@ import shutil
 from pathlib import Path
 
 import openpyxl
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 from .coding_book import SHEET_COLUMN_ORDER
 
 SHEET_NAME = "코딩시트"
+NOTES_SHEET_NAME = "코딩노트"
 EXAMPLE_ROW_MARKER = "예시행"
 
 
@@ -73,5 +76,65 @@ def write_rows(
             ws.cell(row=next_row, column=col_idx).value = row.get(col_name)
         next_row += 1
 
+    _write_notes_sheet(wb, rows)
     wb.save(target)
+
+    notes_path = target.with_suffix(".notes.txt")
+    _write_notes_txt(notes_path, rows)
+
     return target
+
+
+def _write_notes_sheet(wb, rows: list[dict]) -> None:
+    """코딩노트 시트를 생성/업데이트한다."""
+    if NOTES_SHEET_NAME not in wb.sheetnames:
+        ws_notes = wb.create_sheet(NOTES_SHEET_NAME)
+        # 헤더
+        ws_notes.cell(row=1, column=1).value = "사건 ID"
+        ws_notes.cell(row=1, column=2).value = "코딩노트"
+        for cell in (ws_notes.cell(row=1, column=1), ws_notes.cell(row=1, column=2)):
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill("solid", fgColor="D9E1F2")
+        ws_notes.column_dimensions[get_column_letter(1)].width = 18
+        ws_notes.column_dimensions[get_column_letter(2)].width = 80
+        start_row = 2
+    else:
+        ws_notes = wb[NOTES_SHEET_NAME]
+        start_row = ws_notes.max_row + 1
+
+    for row in rows:
+        case_id = row.get("case_id", "")
+        note = row.get("coding_note") or ""
+        if not (case_id or note):
+            continue
+        r = start_row
+        ws_notes.cell(row=r, column=1).value = case_id
+        note_cell = ws_notes.cell(row=r, column=2)
+        note_cell.value = note
+        note_cell.alignment = Alignment(wrap_text=True, vertical="top")
+        start_row += 1
+
+
+def _write_notes_txt(path: Path, rows: list[dict]) -> None:
+    """사건별 코딩노트를 텍스트 파일에 추가 기록한다."""
+    lines = []
+    for row in rows:
+        case_id = row.get("case_id", "(ID없음)")
+        note = row.get("coding_note") or "(코딩노트 없음)"
+        lines.append(f"{'=' * 60}")
+        lines.append(f"[{case_id}]")
+        lines.append(note)
+        lines.append("")
+
+    if not lines:
+        return
+
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    with path.open("a", encoding="utf-8") as f:
+        if existing and not existing.endswith("\n\n"):
+            f.write("\n")
+        f.write("\n".join(lines) + "\n")
+
+
+def notes_path_for(output_path: Path) -> Path:
+    return output_path.with_suffix(".notes.txt")
