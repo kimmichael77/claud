@@ -17,6 +17,8 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 
+import platform as _platform
+
 from case_extractor.cli import process_file
 from case_extractor.excel_writer import notes_path_for, write_rows
 from case_extractor.llm_extract import LLMExtractError, parse_json_response
@@ -24,24 +26,31 @@ from case_extractor.manual_mode import build_row, load_response, make_prompt_fil
 from case_extractor.text_extract import TextExtractError, find_case_files
 from case_extractor.validate import NotJudgmentLikelyError
 
-BG = "#f4f5f7"
+_FONT = "Segoe UI" if _platform.system() == "Windows" else "Helvetica Neue"
+
+BG = "#f0f3f9"
 CARD_BG = "#ffffff"
-ACCENT = "#2f6fed"
-ACCENT_DARK = "#1f4fbf"
-DANGER = "#d64545"
+BORDER = "#dde1ea"
+ACCENT = "#4f46e5"
+ACCENT_DARK = "#3730a3"
+ACCENT_LIGHT = "#eef2ff"
+DANGER = "#dc2626"
+SUCCESS = "#16a34a"
+WARN_COLOR = "#d97706"
+TEXT = "#111827"
 TEXT_MUTED = "#6b7280"
-FONT_BASE = ("Helvetica", 11)
-FONT_BOLD = ("Helvetica", 11, "bold")
-FONT_TITLE = ("Helvetica", 16, "bold")
+FONT_BASE = (_FONT, 11)
+FONT_BOLD = (_FONT, 11, "bold")
+FONT_TITLE = (_FONT, 17, "bold")
 
 
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("판례 코딩시트 변환기")
-        self.geometry("1180x760")
+        self.geometry("1200x780")
         self.configure(bg=BG)
-        self.minsize(980, 620)
+        self.minsize(1000, 640)
 
         # API 모드 상태
         self.template_path = tk.StringVar()
@@ -78,47 +87,50 @@ class App(tk.Tk):
 
         style.configure("TFrame", background=BG)
         style.configure("Card.TFrame", background=CARD_BG)
-        style.configure("TLabel", background=BG, font=FONT_BASE)
-        style.configure("Card.TLabel", background=CARD_BG, font=FONT_BASE)
+        style.configure("TLabel", background=BG, font=FONT_BASE, foreground=TEXT)
+        style.configure("Card.TLabel", background=CARD_BG, font=FONT_BASE, foreground=TEXT)
         style.configure("Muted.TLabel", background=CARD_BG, font=FONT_BASE, foreground=TEXT_MUTED)
-        style.configure("Title.TLabel", background=BG, font=FONT_TITLE)
-        style.configure("Section.TLabel", background=CARD_BG, font=FONT_BOLD, foreground="#111827")
-        style.configure("Info.TLabel", background=CARD_BG, font=("Helvetica", 10), foreground=TEXT_MUTED)
-        style.configure("TEntry", padding=6)
+        style.configure("Title.TLabel", background=BG, font=FONT_TITLE, foreground=TEXT)
+        style.configure("Section.TLabel", background=CARD_BG, font=FONT_BOLD, foreground=TEXT)
+        style.configure("Info.TLabel", background=CARD_BG, font=(_FONT, 10), foreground=TEXT_MUTED)
+        style.configure("TEntry", padding=7, fieldbackground="#fafbff",
+                        bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER)
         style.configure("TCheckbutton", background=CARD_BG, font=FONT_BASE)
-        style.configure(
-            "ModeOn.TButton", font=("Helvetica", 13, "bold"), padding=(18, 14),
-            background=ACCENT, foreground="white", borderwidth=0,
-        )
-        style.map("ModeOn.TButton", background=[("active", ACCENT_DARK)])
-
-        style.configure(
-            "ModeOff.TButton", font=("Helvetica", 13, "bold"), padding=(18, 14),
-            background="#e5e7eb", foreground="#374151", borderwidth=0,
-        )
-        style.map("ModeOff.TButton", background=[("active", "#d1d5db")])
-
         style.configure(
             "Accent.TButton", font=FONT_BOLD, padding=(14, 10),
             background=ACCENT, foreground="white", borderwidth=0,
         )
-        style.map("Accent.TButton", background=[("active", ACCENT_DARK), ("disabled", "#9db6f5")])
+        style.map("Accent.TButton", background=[("active", ACCENT_DARK), ("disabled", "#a5b4fc")])
 
         style.configure(
             "Danger.TButton", font=FONT_BOLD, padding=(14, 10),
             background=DANGER, foreground="white", borderwidth=0,
         )
-        style.map("Danger.TButton", background=[("active", "#b83a3a"), ("disabled", "#e6b3b3")])
+        style.map("Danger.TButton", background=[("active", "#b91c1c"), ("disabled", "#fca5a5")])
 
-        style.configure("Ghost.TButton", font=FONT_BASE, padding=(10, 6))
+        style.configure("Ghost.TButton", font=FONT_BASE, padding=(10, 6),
+                        background=CARD_BG, borderwidth=1,
+                        relief="solid", bordercolor=BORDER)
+        style.map("Ghost.TButton",
+                  background=[("active", ACCENT_LIGHT)],
+                  foreground=[("active", ACCENT)])
 
-        style.configure("Horizontal.TProgressbar", troughcolor="#e5e7eb", background=ACCENT, thickness=10)
+        style.configure("Horizontal.TProgressbar",
+                        troughcolor="#e0e4f0", background=ACCENT, thickness=8)
 
-    def _card(self, parent) -> tuple[ttk.Frame, ttk.Frame]:
-        outer = ttk.Frame(parent, style="TFrame")
-        card = ttk.Frame(outer, style="Card.TFrame", padding=16)
-        card.pack(fill="both", expand=True)
-        return outer, card
+    def _card(self, parent) -> tuple:
+        wrapper = tk.Frame(parent, bg=BORDER)
+        card = ttk.Frame(wrapper, style="Card.TFrame", padding=16)
+        card.pack(fill="both", expand=True, padx=1, pady=1)
+        return wrapper, card
+
+    def _section_header(self, card, step: str, text: str):
+        row = ttk.Frame(card, style="Card.TFrame")
+        row.pack(anchor="w", fill="x", pady=(0, 10))
+        badge = tk.Label(row, text=f" {step} ", bg=ACCENT, fg="white",
+                         font=(_FONT, 9, "bold"), padx=2, pady=1)
+        badge.pack(side="left")
+        ttk.Label(row, text=f"  {text}", style="Section.TLabel").pack(side="left")
 
     def _scrollable(self, parent) -> ttk.Frame:
         """세로로 스크롤되는 영역을 만들고, 그 안에 내용을 채울 프레임을 반환한다."""
@@ -159,18 +171,22 @@ class App(tk.Tk):
         root = ttk.Frame(self, style="TFrame", padding=20)
         root.pack(fill="both", expand=True)
 
-        title_row = ttk.Frame(root, style="TFrame")
-        title_row.pack(fill="x")
-        ttk.Label(title_row, text="판례 코딩시트 변환기", style="Title.TLabel").pack(side="left")
+        title_row = tk.Frame(root, bg=BG)
+        title_row.pack(fill="x", pady=(0, 14))
+
+        accent_bar = tk.Frame(title_row, bg=ACCENT, width=5)
+        accent_bar.pack(side="left", fill="y", padx=(0, 14))
+
+        title_text = tk.Frame(title_row, bg=BG)
+        title_text.pack(side="left")
+        tk.Label(title_text, text="판례 코딩시트 변환기", bg=BG, fg=TEXT,
+                 font=(_FONT, 18, "bold")).pack(anchor="w")
+        tk.Label(title_text, text="판결문(PDF/DOCX) → 코딩시트 엑셀 자동 변환",
+                 bg=BG, fg=TEXT_MUTED, font=(_FONT, 10)).pack(anchor="w")
+
         ttk.Button(
             title_row, text="↺  전체 초기화", style="Ghost.TButton", command=self._reset_all,
-        ).pack(side="right")
-
-        ttk.Label(
-            root,
-            text="판결문(PDF/DOCX)을 넣으면 코딩시트 엑셀 항목을 자동으로 채워줍니다.",
-            style="TLabel", foreground=TEXT_MUTED,
-        ).pack(anchor="w", pady=(2, 14))
+        ).pack(side="right", anchor="n", pady=4)
 
         self._build_mode_selector(root)
 
@@ -196,20 +212,30 @@ class App(tk.Tk):
         self._set_mode("api")
 
     def _build_mode_selector(self, parent):
-        row = ttk.Frame(parent, style="TFrame")
-        row.pack(fill="x")
+        container = tk.Frame(parent, bg=BORDER)
+        container.pack(fill="x")
+        inner = tk.Frame(container, bg=CARD_BG)
+        inner.pack(fill="x", padx=1, pady=1)
 
-        self.mode_api_btn = ttk.Button(
-            row, text="🔑  API 모드\nAPI 키로 자동 처리", style="ModeOn.TButton",
+        self.mode_api_btn = tk.Button(
+            inner, text="🔑  API 모드   —   API 키로 자동 처리",
+            font=(_FONT, 11, "bold"), bg=ACCENT, fg="white",
+            relief="flat", bd=0, padx=18, pady=13, cursor="hand2",
+            activebackground=ACCENT_DARK, activeforeground="white",
             command=lambda: self._set_mode("api"),
         )
-        self.mode_api_btn.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.mode_api_btn.pack(side="left", fill="x", expand=True)
 
-        self.mode_manual_btn = ttk.Button(
-            row, text="✂️  수동 모드\nAPI 키 없이 claude.ai 채팅 이용", style="ModeOff.TButton",
+        tk.Frame(inner, bg=BORDER, width=1).pack(side="left", fill="y")
+
+        self.mode_manual_btn = tk.Button(
+            inner, text="✂️  수동 모드   —   claude.ai 채팅 이용",
+            font=(_FONT, 11), bg=CARD_BG, fg=TEXT_MUTED,
+            relief="flat", bd=0, padx=18, pady=13, cursor="hand2",
+            activebackground=ACCENT_LIGHT, activeforeground=ACCENT,
             command=lambda: self._set_mode("manual"),
         )
-        self.mode_manual_btn.pack(side="left", fill="x", expand=True, padx=(6, 0))
+        self.mode_manual_btn.pack(side="left", fill="x", expand=True)
 
         self.mode_desc_label = ttk.Label(parent, text="", style="TLabel", foreground=TEXT_MUTED)
         self.mode_desc_label.pack(anchor="w", pady=(8, 0))
@@ -252,20 +278,20 @@ class App(tk.Tk):
     def _set_mode(self, mode: str):
         self.mode = mode
         if mode == "api":
-            self.mode_api_btn.configure(style="ModeOn.TButton")
-            self.mode_manual_btn.configure(style="ModeOff.TButton")
+            self.mode_api_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11, "bold"))
+            self.mode_manual_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11))
             self.manual_container.pack_forget()
             self.api_container.pack(fill="both", expand=True)
             self.mode_desc_label.config(
-                text="현재 선택: API 모드 — Anthropic API 키가 있으면 버튼 한 번으로 끝까지 자동 처리합니다 (사용량만큼 별도 과금)."
+                text="API 모드 — Anthropic API 키로 버튼 한 번에 자동 처리합니다 (사용량만큼 별도 과금)."
             )
         else:
-            self.mode_manual_btn.configure(style="ModeOn.TButton")
-            self.mode_api_btn.configure(style="ModeOff.TButton")
+            self.mode_manual_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11, "bold"))
+            self.mode_api_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11))
             self.api_container.pack_forget()
             self.manual_container.pack(fill="both", expand=True)
             self.mode_desc_label.config(
-                text="현재 선택: 수동 모드 — API 키 없이, 이미 쓰는 claude.ai 채팅에 복사/붙여넣기로 진행합니다 (추가 비용 없음)."
+                text="수동 모드 — API 키 없이 claude.ai 채팅에 복사/붙여넣기로 진행합니다 (추가 비용 없음)."
             )
 
     # ================= API 모드 =================
@@ -278,7 +304,7 @@ class App(tk.Tk):
         outer, card = self._card(parent)
         outer.pack(fill="x", pady=(0, 12))
 
-        ttk.Label(card, text="1. 판결문 입력", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(card, "1", "판결문 입력")
 
         btn_row = ttk.Frame(card, style="Card.TFrame")
         btn_row.pack(fill="x")
@@ -292,9 +318,10 @@ class App(tk.Tk):
         list_frame = ttk.Frame(card, style="Card.TFrame")
         list_frame.pack(fill="both", expand=True, pady=(10, 0))
         self.file_listbox = tk.Listbox(
-            list_frame, height=6, font=FONT_BASE, bg="#fafafa",
-            selectbackground=ACCENT, relief="flat", highlightthickness=1,
-            highlightbackground="#e5e7eb",
+            list_frame, height=6, font=FONT_BASE, bg="#fafbff", fg=TEXT,
+            selectbackground=ACCENT, selectforeground="white",
+            relief="flat", highlightthickness=1,
+            highlightbackground=BORDER, activestyle="none",
         )
         self.file_listbox.pack(side="left", fill="both", expand=True)
         scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.file_listbox.yview)
@@ -308,7 +335,7 @@ class App(tk.Tk):
         outer, card = self._card(parent)
         outer.pack(fill="x", pady=(0, 12))
 
-        ttk.Label(card, text="2. 설정", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(card, "2", "설정")
 
         self._labeled_path_row(card, "코딩시트 템플릿 (xlsx)", self.template_path, self._pick_template)
         self._labeled_path_row(card, "결과 저장 위치 (xlsx)", self.output_path, self._pick_output)
@@ -486,7 +513,7 @@ class App(tk.Tk):
     def _build_manual_tab(self, parent):
         outer, card = self._card(parent)
         outer.pack(fill="x", pady=(0, 12))
-        ttk.Label(card, text="API 키 없이 진행하는 방법", style="Section.TLabel").pack(anchor="w", pady=(0, 6))
+        self._section_header(card, "ℹ", "API 키 없이 진행하는 방법")
         ttk.Label(
             card,
             style="Info.TLabel",
@@ -506,7 +533,7 @@ class App(tk.Tk):
         # 판결문 선택 (수동 모드 전용)
         outer2, card2 = self._card(parent)
         outer2.pack(fill="x", pady=(0, 12))
-        ttk.Label(card2, text="1. 판결문 선택", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(card2, "1", "판결문 선택")
 
         btn_row = ttk.Frame(card2, style="Card.TFrame")
         btn_row.pack(fill="x")
@@ -523,7 +550,7 @@ class App(tk.Tk):
         # 1단계
         outer3, card3 = self._card(parent)
         outer3.pack(fill="x", pady=(0, 12))
-        ttk.Label(card3, text="2. 프롬프트 파일 만들기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(card3, "2", "프롬프트 파일 만들기")
         self._labeled_path_row(card3, "프롬프트 저장 폴더", self.prompts_dir, self._manual_pick_prompts_dir)
         self.manual_prompts_btn = ttk.Button(card3, text="📝  프롬프트 파일 만들기", style="Accent.TButton",
                                              command=self._manual_make_prompts)
@@ -532,7 +559,7 @@ class App(tk.Tk):
         # 응답 붙여넣어 저장하기
         outer_paste, card_paste = self._card(parent)
         outer_paste.pack(fill="x", pady=(0, 12))
-        ttk.Label(card_paste, text="3. 응답 붙여넣어 저장하기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(card_paste, "3", "응답 붙여넣어 저장하기")
         self._labeled_path_row(card_paste, "응답 저장 폴더", self.responses_dir, self._manual_pick_responses_dir)
 
         ttk.Label(
@@ -556,8 +583,9 @@ class App(tk.Tk):
         self.manual_paste_status_label.pack(anchor="w", pady=(0, 6))
 
         self.manual_paste_text = scrolledtext.ScrolledText(
-            card_paste, height=8, font=("Menlo", 10), bg="#fafafa", relief="flat",
-            highlightthickness=1, highlightbackground="#e5e7eb", padx=8, pady=6,
+            card_paste, height=8, font=("Menlo", 10), bg="#fafbff", fg=TEXT,
+            relief="flat", highlightthickness=1, highlightbackground=BORDER,
+            padx=10, pady=8,
         )
         self.manual_paste_text.pack(fill="both", expand=True, pady=(0, 8))
 
@@ -571,7 +599,7 @@ class App(tk.Tk):
         # 2단계
         outer4, card4 = self._card(parent)
         outer4.pack(fill="x", pady=(0, 0))
-        ttk.Label(card4, text="4. 응답을 엑셀로 합치기", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(card4, "4", "응답을 엑셀로 합치기")
         self._labeled_path_row(card4, "코딩시트 템플릿 (xlsx)", self.manual_template_path, self._manual_pick_template)
         self._labeled_path_row(card4, "응답(.json) 폴더", self.responses_dir, self._manual_pick_responses_dir)
 
@@ -895,14 +923,14 @@ class App(tk.Tk):
     def _build_log_card(self, parent):
         stats_outer, stats_card = self._card(parent)
         stats_outer.pack(fill="x", pady=(0, 10))
-        ttk.Label(stats_card, text="현재 작업 요약", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(stats_card, "📊", "작업 요약")
 
-        tiles = ttk.Frame(stats_card, style="Card.TFrame")
+        tiles = tk.Frame(stats_card, bg=CARD_BG)
         tiles.pack(fill="x")
-        self.stat_total_label = self._stat_tile(tiles, "총 파일", "#111827")
-        self.stat_done_label = self._stat_tile(tiles, "완료", "#16a34a")
-        self.stat_skipped_label = self._stat_tile(tiles, "건너뜀", "#d97706")
-        self.stat_failed_label = self._stat_tile(tiles, "실패", "#dc2626")
+        self.stat_total_label = self._stat_tile(tiles, "총 파일", TEXT, "#f1f3f9")
+        self.stat_done_label = self._stat_tile(tiles, "완료", SUCCESS, "#dcfce7")
+        self.stat_skipped_label = self._stat_tile(tiles, "건너뜀", WARN_COLOR, "#fef9c3")
+        self.stat_failed_label = self._stat_tile(tiles, "실패", DANGER, "#fee2e2")
 
         self.mode_status_label = ttk.Label(stats_card, text="", style="Muted.TLabel", wraplength=280)
         self.mode_status_label.pack(anchor="w", pady=(10, 0))
@@ -910,22 +938,24 @@ class App(tk.Tk):
         outer, card = self._card(parent)
         outer.pack(fill="both", expand=True)
 
-        ttk.Label(card, text="진행 상황", style="Section.TLabel").pack(anchor="w", pady=(0, 8))
+        self._section_header(card, "▶", "진행 상황")
         self.log = scrolledtext.ScrolledText(
-            card, height=10, font=("Menlo", 10), bg="#0f172a", fg="#e2e8f0",
-            insertbackground="#e2e8f0", relief="flat", padx=10, pady=8, wrap="word",
+            card, height=10, font=("Menlo", 10), bg="#0d1117", fg="#e6edf3",
+            insertbackground="#e6edf3", relief="flat", padx=12, pady=10, wrap="word",
         )
         self.log.pack(fill="both", expand=True)
-        self.log.tag_config("warn", foreground="#fbbf24")
-        self.log.tag_config("err", foreground="#f87171")
-        self.log.tag_config("ok", foreground="#4ade80")
+        self.log.tag_config("warn", foreground="#e3b341")
+        self.log.tag_config("err", foreground="#ff7b72")
+        self.log.tag_config("ok", foreground="#3fb950")
 
-    def _stat_tile(self, parent, label, color) -> ttk.Label:
-        tile = ttk.Frame(parent, style="Card.TFrame")
-        tile.pack(side="left", expand=True, fill="x")
-        value_label = ttk.Label(tile, text="0", style="Card.TLabel", font=("Helvetica", 18, "bold"), foreground=color)
+    def _stat_tile(self, parent, label, color, bg_color) -> tk.Label:
+        tile = tk.Frame(parent, bg=bg_color, padx=12, pady=10)
+        tile.pack(side="left", expand=True, fill="x", padx=(0, 6))
+        value_label = tk.Label(tile, text="0", bg=bg_color, fg=color,
+                               font=(_FONT, 22, "bold"))
         value_label.pack(anchor="w")
-        ttk.Label(tile, text=label, style="Muted.TLabel").pack(anchor="w")
+        tk.Label(tile, text=label, bg=bg_color, fg=TEXT_MUTED,
+                 font=(_FONT, 10)).pack(anchor="w")
         return value_label
 
     # ---------- 작업 요약 카운터 ----------
