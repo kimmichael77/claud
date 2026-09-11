@@ -299,6 +299,9 @@ class App(tk.Tk):
         self._stats = {"total": 0, "done": 0, "skipped": 0, "failed": 0}
         self._refresh_stats_labels()
         self.mode_status_label.config(text="")
+        self._last_result_path = None
+        self.open_result_btn.config(state="disabled")
+        self.open_result_folder_btn.config(state="disabled")
 
         self._log("전체 입력을 초기화했습니다.", "warn")
 
@@ -518,6 +521,7 @@ class App(tk.Tk):
             if notes.exists():
                 self._log(f"코딩노트: {notes}", "ok")
             self._log("주의: AI가 추출한 값이므로 coding_note에 [AI 추출] 표시가 된 행은 원문과 대조 검수하세요.", "warn")
+            self.after(0, lambda p=out: self._set_result_path(p))
         except PermissionError:
             msg = (
                 f"엑셀 파일을 저장하지 못했습니다: {output}\n\n"
@@ -532,6 +536,42 @@ class App(tk.Tk):
         except Exception as e:
             self._log(f"저장 실패: {e}", "err")
             self._show_error(f"엑셀 저장 중 오류가 발생했습니다.\n{e}")
+
+    def _set_result_path(self, path: Path):
+        self._last_result_path = path
+        self.open_result_btn.config(state="normal")
+        self.open_result_folder_btn.config(state="normal")
+
+    def _open_result_file(self):
+        if not self._last_result_path or not self._last_result_path.exists():
+            messagebox.showwarning("알림", "저장된 결과 파일을 찾을 수 없습니다.")
+            return
+        try:
+            sys_name = _platform.system()
+            if sys_name == "Darwin":
+                subprocess.Popen(["open", str(self._last_result_path)])
+            elif sys_name == "Windows":
+                os.startfile(str(self._last_result_path))
+            else:
+                subprocess.Popen(["xdg-open", str(self._last_result_path)])
+        except Exception as e:
+            messagebox.showerror("열기 오류", f"파일을 열 수 없습니다:\n{e}")
+
+    def _open_result_folder(self):
+        if not self._last_result_path:
+            messagebox.showwarning("알림", "저장된 결과 파일을 찾을 수 없습니다.")
+            return
+        folder = self._last_result_path.parent
+        try:
+            sys_name = _platform.system()
+            if sys_name == "Darwin":
+                subprocess.Popen(["open", str(folder)])
+            elif sys_name == "Windows":
+                subprocess.Popen(["explorer", str(folder)])
+            else:
+                subprocess.Popen(["xdg-open", str(folder)])
+        except Exception as e:
+            messagebox.showerror("열기 오류", f"폴더를 열 수 없습니다:\n{e}")
 
     def _show_error(self, message: str):
         self.after(0, lambda: messagebox.showerror("오류", message))
@@ -1153,6 +1193,26 @@ class App(tk.Tk):
 
         self.mode_status_label = ttk.Label(stats_card, text="", style="Muted.TLabel", wraplength=280)
         self.mode_status_label.pack(anchor="w", pady=(10, 0))
+
+        result_btn_row = tk.Frame(stats_card, bg=CARD_BG)
+        result_btn_row.pack(fill="x", pady=(8, 0))
+        self.open_result_btn = tk.Button(
+            result_btn_row, text="📊  결과 파일 열기",
+            font=(_FONT, 10, "bold"), bg=ACCENT, fg="white",
+            relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
+            activebackground=ACCENT_DARK, activeforeground="white",
+            command=self._open_result_file, state="disabled",
+        )
+        self.open_result_btn.pack(side="left")
+        self.open_result_folder_btn = tk.Button(
+            result_btn_row, text="📁  폴더 열기",
+            font=(_FONT, 10), bg="#e8eaf6", fg=TEXT,
+            relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
+            activebackground="#d1d5fa", activeforeground=TEXT,
+            command=self._open_result_folder, state="disabled",
+        )
+        self.open_result_folder_btn.pack(side="left", padx=(6, 0))
+        self._last_result_path: Path | None = None
 
         outer, card = self._card(parent)
         outer.pack(fill="both", expand=True)
