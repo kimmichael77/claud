@@ -32,8 +32,9 @@ def _build_system_prompt() -> str:
         f = FIELDS_BY_NAME[name]
         lines.append(f"- {f.name} ({f.group}): {f.definition}\n  코딩 규칙: {f.rule}")
     lines.append(
-        "\n[출력 JSON 스키마] 아래 키를 모두 포함한 JSON 객체 하나만 출력하세요:\n"
-        + json.dumps({name: "..." for name in LLM_REQUESTED_FIELDS}, ensure_ascii=False, indent=2)
+        "\n[출력 JSON 스키마] 아래 키를 모두 포함한 JSON 객체 하나만 출력하세요. "
+        "null 자리에 판결문에서 추출한 실제 값을 채우세요. null을 그대로 두면 안 됩니다:\n"
+        + json.dumps({name: None for name in LLM_REQUESTED_FIELDS}, ensure_ascii=False, indent=2)
     )
     return "\n".join(lines)
 
@@ -92,6 +93,8 @@ def parse_json_response(raw: str) -> dict:
     if start == -1 or end == -1:
         raise LLMExtractError(f"모델 응답에서 JSON을 찾지 못했습니다:\n{raw[:500]}")
     try:
-        return json.loads(raw[start : end + 1])
+        data = json.loads(raw[start : end + 1])
     except json.JSONDecodeError as e:
         raise LLMExtractError(f"모델이 반환한 JSON을 파싱하지 못했습니다: {e}\n응답: {raw[:500]}") from e
+    # "..." 플레이스홀더가 그대로 남아있으면 None으로 치환
+    return {k: (None if v == "..." else v) for k, v in data.items()}
