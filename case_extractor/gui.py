@@ -27,7 +27,10 @@ from case_extractor.manual_mode import build_prompt, build_row, load_response, m
 from case_extractor.text_extract import TextExtractError, extract_text, find_case_files
 from case_extractor.validate import NotJudgmentLikelyError
 
+_IS_MAC = _platform.system() == "Darwin"
 _FONT = "Segoe UI" if _platform.system() == "Windows" else "Helvetica Neue"
+# macOS renders tkinter fonts ~2pt smaller than Windows — boost all sizes
+_B = 2 if _IS_MAC else 0
 
 BG = "#f0f2fc"
 CARD_BG = "#ffffff"
@@ -39,12 +42,12 @@ DANGER = "#e53e3e"
 SUCCESS = "#22863a"
 WARN_COLOR = "#c08000"
 TEXT = "#1a1f36"
-TEXT_MUTED = "#74778b"
+TEXT_MUTED = "#4e5268"  # 가독성 개선: 기존 #74778b → 더 진한 색
 STEP1_BG = "#ede9fe"   # 연보라 - 복사 단계
 STEP2_BG = "#d1fae5"   # 연초록 - 저장 단계
-FONT_BASE = (_FONT, 11)
-FONT_BOLD = (_FONT, 11, "bold")
-FONT_TITLE = (_FONT, 17, "bold")
+FONT_BASE = (_FONT, 11 + _B)
+FONT_BOLD = (_FONT, 11 + _B, "bold")
+FONT_TITLE = (_FONT, 17 + _B, "bold")
 
 
 class App(tk.Tk):
@@ -98,7 +101,7 @@ class App(tk.Tk):
         style.configure("Muted.TLabel", background=CARD_BG, font=FONT_BASE, foreground=TEXT_MUTED)
         style.configure("Title.TLabel", background=BG, font=FONT_TITLE, foreground=TEXT)
         style.configure("Section.TLabel", background=CARD_BG, font=FONT_BOLD, foreground=TEXT)
-        style.configure("Info.TLabel", background=CARD_BG, font=(_FONT, 10), foreground=TEXT_MUTED)
+        style.configure("Info.TLabel", background=CARD_BG, font=(_FONT, 10 + _B), foreground=TEXT_MUTED)
         style.configure("TSeparator", background=BORDER)
         style.configure("TEntry", padding=7, fieldbackground="#fafbff",
                         bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER)
@@ -135,7 +138,7 @@ class App(tk.Tk):
         row = ttk.Frame(card, style="Card.TFrame")
         row.pack(anchor="w", fill="x", pady=(0, 10))
         badge = tk.Label(row, text=f" {step} ", bg=ACCENT, fg="white",
-                         font=(_FONT, 9, "bold"), padx=2, pady=1)
+                         font=(_FONT, 9 + _B, "bold"), padx=2, pady=1)
         badge.pack(side="left")
         ttk.Label(row, text=f"  {text}", style="Section.TLabel").pack(side="left")
 
@@ -210,9 +213,9 @@ class App(tk.Tk):
         title_text = tk.Frame(title_row, bg=BG)
         title_text.pack(side="left")
         tk.Label(title_text, text="Case Law Coding Sheet Converter", bg=BG, fg=TEXT,
-                 font=(_FONT, 18, "bold")).pack(anchor="w")
+                 font=(_FONT, 18 + _B, "bold")).pack(anchor="w")
         tk.Label(title_text, text="판결문(PDF/DOCX) → 코딩시트 엑셀 자동 변환",
-                 bg=BG, fg=TEXT_MUTED, font=(_FONT, 10)).pack(anchor="w")
+                 bg=BG, fg=TEXT_MUTED, font=(_FONT, 10 + _B)).pack(anchor="w")
 
         ttk.Button(
             title_row, text="↺  전체 초기화", style="Ghost.TButton", command=self._reset_all,
@@ -249,7 +252,7 @@ class App(tk.Tk):
 
         self.mode_api_btn = tk.Button(
             inner, text="🔑  API 모드   —   API 키로 자동 처리",
-            font=(_FONT, 11, "bold"), bg=ACCENT, fg="white",
+            font=(_FONT, 11 + _B, "bold"), bg=ACCENT, fg="white",
             relief="flat", bd=0, padx=18, pady=13, cursor="hand2",
             activebackground=ACCENT_DARK, activeforeground="white",
             command=lambda: self._set_mode("api"),
@@ -260,7 +263,7 @@ class App(tk.Tk):
 
         self.mode_manual_btn = tk.Button(
             inner, text="✂️  수동 모드   —   claude.ai 채팅 이용",
-            font=(_FONT, 11), bg=CARD_BG, fg=TEXT_MUTED,
+            font=(_FONT, 11 + _B), bg=CARD_BG, fg=TEXT_MUTED,
             relief="flat", bd=0, padx=18, pady=13, cursor="hand2",
             activebackground=ACCENT_LIGHT, activeforeground=ACCENT,
             command=lambda: self._set_mode("manual"),
@@ -308,16 +311,16 @@ class App(tk.Tk):
     def _set_mode(self, mode: str):
         self.mode = mode
         if mode == "api":
-            self.mode_api_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11, "bold"))
-            self.mode_manual_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11))
+            self.mode_api_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11 + _B, "bold"))
+            self.mode_manual_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11 + _B))
             self.manual_container.pack_forget()
             self.api_container.pack(fill="both", expand=True)
             self.mode_desc_label.config(
                 text="API 모드 — Anthropic API 키로 버튼 한 번에 자동 처리합니다 (사용량만큼 별도 과금)."
             )
         else:
-            self.mode_manual_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11, "bold"))
-            self.mode_api_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11))
+            self.mode_manual_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11 + _B, "bold"))
+            self.mode_api_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11 + _B))
             self.api_container.pack_forget()
             self.manual_container.pack(fill="both", expand=True)
             self.mode_desc_label.config(
@@ -619,7 +622,7 @@ class App(tk.Tk):
 
         self.manual_file_listbox = tk.Listbox(
             left_inner,
-            font=(_FONT, 10), bg=CARD_BG, fg=TEXT,
+            font=(_FONT, 10 + _B), bg=CARD_BG, fg=TEXT,
             selectbackground=ACCENT_LIGHT, selectforeground=ACCENT,
             relief="flat", bd=0, highlightthickness=0,
             activestyle="none", height=14,
@@ -636,7 +639,7 @@ class App(tk.Tk):
 
         self.manual_detail_label = tk.Label(
             right, text="← 왼쪽에서 판결문을 선택하세요",
-            bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11, "bold"), anchor="w",
+            bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11 + _B, "bold"), anchor="w",
         )
         self.manual_detail_label.pack(fill="x", pady=(0, 8))
 
@@ -651,7 +654,7 @@ class App(tk.Tk):
         preview_toolbar = tk.Frame(self.manual_preview_frame, bg=CARD_BG)
         preview_toolbar.pack(fill="x", pady=(0, 4))
         tk.Label(preview_toolbar, text="판결문 원문 (추출 텍스트)", bg=CARD_BG,
-                 fg=TEXT_MUTED, font=(_FONT, 9)).pack(side="left")
+                 fg=TEXT_MUTED, font=(_FONT, 9 + _B)).pack(side="left")
         ttk.Button(preview_toolbar, text="✕ 닫기", style="Ghost.TButton",
                    command=self._manual_close_preview).pack(side="right")
         ttk.Button(preview_toolbar, text="지우기", style="Ghost.TButton",
@@ -662,7 +665,7 @@ class App(tk.Tk):
         )
         self.manual_open_file_btn.pack(side="right", padx=(0, 6))
         self.manual_preview_text = scrolledtext.ScrolledText(
-            self.manual_preview_frame, height=12, font=("Menlo", 9),
+            self.manual_preview_frame, height=12, font=("Menlo", 9 + _B),
             bg="#f8f9fa", fg=TEXT_MUTED,
             relief="flat", highlightthickness=1, highlightbackground=BORDER,
             padx=8, pady=6, state="disabled", wrap="word",
@@ -676,14 +679,14 @@ class App(tk.Tk):
         step1_title_row = tk.Frame(step1_box, bg=STEP1_BG)
         step1_title_row.pack(fill="x", pady=(0, 6))
         badge1 = tk.Label(step1_title_row, text=" ① ", bg=ACCENT, fg="white",
-                          font=(_FONT, 9, "bold"), padx=4, pady=2)
+                          font=(_FONT, 9 + _B, "bold"), padx=4, pady=2)
         badge1.pack(side="left")
         tk.Label(step1_title_row, text="  claude.ai에 보낼 프롬프트 복사",
-                 bg=STEP1_BG, fg=TEXT, font=(_FONT, 11, "bold")).pack(side="left")
+                 bg=STEP1_BG, fg=TEXT, font=(_FONT, 11 + _B, "bold")).pack(side="left")
 
         self.manual_copy_prompt_btn = tk.Button(
             step1_box, text="📋  클립보드에 복사",
-            font=(_FONT, 11, "bold"), bg=ACCENT, fg="white",
+            font=(_FONT, 11 + _B, "bold"), bg=ACCENT, fg="white",
             relief="flat", bd=0, padx=14, pady=8, cursor="hand2",
             activebackground=ACCENT_DARK, activeforeground="white",
             command=self._manual_copy_prompt, state="disabled",
@@ -691,7 +694,7 @@ class App(tk.Tk):
         self.manual_copy_prompt_btn.pack(anchor="w")
 
         self.manual_copy_status_label = tk.Label(
-            step1_box, text="", bg=STEP1_BG, fg=ACCENT, font=(_FONT, 10), anchor="w",
+            step1_box, text="", bg=STEP1_BG, fg=ACCENT, font=(_FONT, 10 + _B), anchor="w",
         )
         self.manual_copy_status_label.pack(fill="x", pady=(4, 0))
 
@@ -702,13 +705,13 @@ class App(tk.Tk):
         step2_title_row = tk.Frame(step2_box, bg=STEP2_BG)
         step2_title_row.pack(fill="x", pady=(0, 6))
         badge2 = tk.Label(step2_title_row, text=" ② ", bg=SUCCESS, fg="white",
-                          font=(_FONT, 9, "bold"), padx=4, pady=2)
+                          font=(_FONT, 9 + _B, "bold"), padx=4, pady=2)
         badge2.pack(side="left")
         tk.Label(step2_title_row, text="  claude.ai 응답(JSON) 붙여넣고 저장",
-                 bg=STEP2_BG, fg=TEXT, font=(_FONT, 11, "bold")).pack(side="left")
+                 bg=STEP2_BG, fg=TEXT, font=(_FONT, 11 + _B, "bold")).pack(side="left")
 
         self.manual_paste_text = scrolledtext.ScrolledText(
-            step2_box, height=8, font=("Menlo", 10), bg="#f0faf4", fg=TEXT,
+            step2_box, height=8, font=("Menlo", 10 + _B), bg="#f0faf4", fg=TEXT,
             relief="flat", highlightthickness=1, highlightbackground="#bbf7d0",
             padx=10, pady=8,
         )
@@ -719,7 +722,7 @@ class App(tk.Tk):
         save_row.pack(fill="x")
         self.manual_save_btn = tk.Button(
             save_row, text="✅  엑셀에 저장",
-            font=(_FONT, 11, "bold"), bg=SUCCESS, fg="white",
+            font=(_FONT, 11 + _B, "bold"), bg=SUCCESS, fg="white",
             relief="flat", bd=0, padx=14, pady=8, cursor="hand2",
             activebackground="#166534", activeforeground="white",
             command=self._manual_save_direct, state="disabled",
@@ -1198,7 +1201,7 @@ class App(tk.Tk):
         result_btn_row.pack(fill="x", pady=(8, 0))
         self.open_result_btn = tk.Button(
             result_btn_row, text="📊  결과 파일 열기",
-            font=(_FONT, 10, "bold"), bg=ACCENT, fg="white",
+            font=(_FONT, 10 + _B, "bold"), bg=ACCENT, fg="white",
             relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
             activebackground=ACCENT_DARK, activeforeground="white",
             command=self._open_result_file, state="disabled",
@@ -1206,7 +1209,7 @@ class App(tk.Tk):
         self.open_result_btn.pack(side="left")
         self.open_result_folder_btn = tk.Button(
             result_btn_row, text="📁  폴더 열기",
-            font=(_FONT, 10), bg="#e8eaf6", fg=TEXT,
+            font=(_FONT, 10 + _B), bg="#e8eaf6", fg=TEXT,
             relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
             activebackground="#d1d5fa", activeforeground=TEXT,
             command=self._open_result_folder, state="disabled",
@@ -1219,7 +1222,7 @@ class App(tk.Tk):
 
         self._section_header(card, "▶", "진행 상황")
         self.log = scrolledtext.ScrolledText(
-            card, height=10, font=("Menlo", 10), bg="#0d1117", fg="#e6edf3",
+            card, height=10, font=("Menlo", 10 + _B), bg="#0d1117", fg="#e6edf3",
             insertbackground="#e6edf3", relief="flat", padx=12, pady=10, wrap="word",
         )
         self.log.pack(fill="both", expand=True)
@@ -1234,7 +1237,7 @@ class App(tk.Tk):
                                font=(_FONT, 22, "bold"))
         value_label.pack(anchor="w")
         tk.Label(tile, text=label, bg=bg_color, fg=TEXT_MUTED,
-                 font=(_FONT, 10)).pack(anchor="w")
+                 font=(_FONT, 10 + _B)).pack(anchor="w")
         return value_label
 
     # ---------- 작업 요약 카운터 ----------
