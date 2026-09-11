@@ -53,7 +53,10 @@ def write_rows(
 ) -> Path:
     """rows(각 항목이 SHEET_COLUMN_ORDER 키를 갖는 dict)를 템플릿에 이어붙여 output_path에 저장한다."""
     if output_path != template_path:
-        shutil.copy(template_path, output_path)
+        # 출력 파일이 없을 때만 템플릿을 복사한다.
+        # 이미 존재하면 기존 데이터를 보존하고 이어붙인다.
+        if not output_path.exists():
+            shutil.copy(template_path, output_path)
         target = output_path
     else:
         target = template_path
