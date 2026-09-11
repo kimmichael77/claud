@@ -607,8 +607,16 @@ class App(tk.Tk):
         self.manual_preview_btn.pack(anchor="w", pady=(0, 4))
 
         self.manual_preview_frame = tk.Frame(right, bg=CARD_BG)
+        preview_toolbar = tk.Frame(self.manual_preview_frame, bg=CARD_BG)
+        preview_toolbar.pack(fill="x", pady=(0, 4))
+        tk.Label(preview_toolbar, text="판결문 원문", bg=CARD_BG,
+                 fg=TEXT_MUTED, font=(_FONT, 9)).pack(side="left")
+        ttk.Button(preview_toolbar, text="✕ 닫기", style="Ghost.TButton",
+                   command=self._manual_close_preview).pack(side="right")
+        ttk.Button(preview_toolbar, text="지우기", style="Ghost.TButton",
+                   command=self._manual_clear_preview).pack(side="right", padx=(0, 6))
         self.manual_preview_text = scrolledtext.ScrolledText(
-            self.manual_preview_frame, height=10, font=("Menlo", 9),
+            self.manual_preview_frame, height=12, font=("Menlo", 9),
             bg="#f8f9fa", fg=TEXT_MUTED,
             relief="flat", highlightthickness=1, highlightbackground=BORDER,
             padx=8, pady=6, state="disabled", wrap="word",
@@ -734,6 +742,15 @@ class App(tk.Tk):
         if self.manual_preview_frame.winfo_ismapped():
             self._manual_load_preview(path)
 
+    def _manual_close_preview(self):
+        self.manual_preview_frame.pack_forget()
+        self.manual_preview_btn.config(text="👁  판결문 내용 미리보기 ▼")
+
+    def _manual_clear_preview(self):
+        self.manual_preview_text.config(state="normal")
+        self.manual_preview_text.delete("1.0", "end")
+        self.manual_preview_text.config(state="disabled")
+
     def _manual_toggle_preview(self):
         if self.manual_preview_frame.winfo_ismapped():
             self.manual_preview_frame.pack_forget()
@@ -754,10 +771,9 @@ class App(tk.Tk):
     def _manual_load_preview_worker(self, path: Path):
         try:
             text = extract_text(path)
-            preview = text[:4000] + (f"\n\n... (이하 {len(text)-4000:,}자 생략)" if len(text) > 4000 else "")
         except Exception as e:
-            preview = f"[미리보기 오류: {e}]"
-        self.after(0, lambda t=preview: self._manual_set_preview(t))
+            text = f"[미리보기 오류: {e}]"
+        self.after(0, lambda t=text: self._manual_set_preview(t))
 
     def _manual_set_preview(self, text: str):
         self.manual_preview_text.config(state="normal")
