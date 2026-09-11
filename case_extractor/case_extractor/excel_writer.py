@@ -68,7 +68,9 @@ def write_rows(
             row["case_id"] = f"{id_prefix}{next_num:03d}"
             next_num += 1
         for col_idx, col_name in enumerate(SHEET_COLUMN_ORDER, start=1):
-            ws.cell(row=next_row, column=col_idx, value=row.get(col_name))
+            # value=None 을 ws.cell(..., value=None)으로 쓰면 기존 셀 값이 지워지지 않는다.
+            # 반드시 cell.value = ... 형태로 직접 대입해야 빈 값도 덮어쓸 수 있다.
+            ws.cell(row=next_row, column=col_idx).value = row.get(col_name)
         next_row += 1
 
     wb.save(target)
