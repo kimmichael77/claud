@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import queue
+import subprocess
 import threading
 import tkinter as tk
 from pathlib import Path
@@ -609,12 +610,17 @@ class App(tk.Tk):
         self.manual_preview_frame = tk.Frame(right, bg=CARD_BG)
         preview_toolbar = tk.Frame(self.manual_preview_frame, bg=CARD_BG)
         preview_toolbar.pack(fill="x", pady=(0, 4))
-        tk.Label(preview_toolbar, text="판결문 원문", bg=CARD_BG,
+        tk.Label(preview_toolbar, text="판결문 원문 (추출 텍스트)", bg=CARD_BG,
                  fg=TEXT_MUTED, font=(_FONT, 9)).pack(side="left")
         ttk.Button(preview_toolbar, text="✕ 닫기", style="Ghost.TButton",
                    command=self._manual_close_preview).pack(side="right")
         ttk.Button(preview_toolbar, text="지우기", style="Ghost.TButton",
                    command=self._manual_clear_preview).pack(side="right", padx=(0, 6))
+        self.manual_open_file_btn = ttk.Button(
+            preview_toolbar, text="📄 PDF 원본 열기", style="Ghost.TButton",
+            command=self._manual_open_file, state="disabled",
+        )
+        self.manual_open_file_btn.pack(side="right", padx=(0, 6))
         self.manual_preview_text = scrolledtext.ScrolledText(
             self.manual_preview_frame, height=12, font=("Menlo", 9),
             bg="#f8f9fa", fg=TEXT_MUTED,
@@ -712,6 +718,7 @@ class App(tk.Tk):
         self._manual_update_file_list()
         self.manual_detail_label.config(text="← 왼쪽에서 판결문을 선택하세요", fg=TEXT_MUTED)
         self.manual_preview_btn.config(state="disabled")
+        self.manual_open_file_btn.config(state="disabled")
         self.manual_copy_prompt_btn.config(state="disabled")
         self.manual_save_btn.config(state="disabled")
         self.manual_copy_status_label.config(text="")
@@ -736,11 +743,27 @@ class App(tk.Tk):
             text=f"{'✅' if done else '📄'}  {path.name}", fg=SUCCESS if done else TEXT,
         )
         self.manual_preview_btn.config(state="normal")
+        self.manual_open_file_btn.config(state="normal")
         self.manual_copy_prompt_btn.config(state="normal")
         self.manual_save_btn.config(state="normal")
         self.manual_copy_status_label.config(text="")
         if self.manual_preview_frame.winfo_ismapped():
             self._manual_load_preview(path)
+
+    def _manual_open_file(self):
+        if not (0 <= self.manual_selected_idx < len(self.manual_files)):
+            return
+        path = self.manual_files[self.manual_selected_idx]
+        try:
+            sys_name = _platform.system()
+            if sys_name == "Darwin":
+                subprocess.Popen(["open", str(path)])
+            elif sys_name == "Windows":
+                os.startfile(str(path))
+            else:
+                subprocess.Popen(["xdg-open", str(path)])
+        except Exception as e:
+            messagebox.showerror("열기 오류", f"파일을 열 수 없습니다:\n{e}")
 
     def _manual_close_preview(self):
         self.manual_preview_frame.pack_forget()
