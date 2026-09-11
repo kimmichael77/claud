@@ -80,7 +80,7 @@ CODING_BOOK: list[FieldDef] = [
     FieldDef("court_region", "법원", "관할법원 지역", "수도권/광역시/기타 (텍스트)", "확정"),
     FieldDef("instance", "법원", "심급", "1=1심,2=항소심,3=상고심", "확정"),
     FieldDef("coder_id", "관리", "코딩 담당자", "신뢰도 검증용 식별자. 실행 시 --coder-id 값으로 채움", "확정", manual=True),
-    FieldDef("coding_note", "관리", "코딩 비고", "결측/모호 사례 사유 기재. LLM 특이사항 + 코드가 [AI 추출] 태그를 덧붙임", "확정"),
+    FieldDef("coding_note", "관리", "코딩 비고", "모든 변수의 코딩 근거 기재. '변수명=값: 판결문 원문 근거' 형식으로 줄바꿈 구분. 결측 항목은 이유 명시. LLM 특이사항 + 코드가 [AI 추출] 태그를 덧붙임", "확정"),
     FieldDef("distribution_purpose_established", "사건특성", "'반포 등을 할 목적으로' 요건 인정 여부 (한민경 2024)",
              "0=불인정/쟁점없음, 1=법원이 반포목적 인정. 무죄 사유가 이 요건 불충족인 경우 반드시 0으로 코딩하고 "
              "coding_note에 '반포목적 불인정으로 무죄' 명시", "가설(파일럿검증)"),
