@@ -22,23 +22,25 @@ import platform as _platform
 from case_extractor.cli import process_file
 from case_extractor.excel_writer import notes_path_for, write_rows
 from case_extractor.llm_extract import LLMExtractError, parse_json_response
-from case_extractor.manual_mode import build_row, load_response, make_prompt_file, read_response_file
-from case_extractor.text_extract import TextExtractError, find_case_files
+from case_extractor.manual_mode import build_prompt, build_row, load_response, make_prompt_file, read_response_file
+from case_extractor.text_extract import TextExtractError, extract_text, find_case_files
 from case_extractor.validate import NotJudgmentLikelyError
 
 _FONT = "Segoe UI" if _platform.system() == "Windows" else "Helvetica Neue"
 
-BG = "#f0f3f9"
+BG = "#f0f2fc"
 CARD_BG = "#ffffff"
-BORDER = "#dde1ea"
-ACCENT = "#4f46e5"
-ACCENT_DARK = "#3730a3"
-ACCENT_LIGHT = "#eef2ff"
-DANGER = "#dc2626"
-SUCCESS = "#16a34a"
-WARN_COLOR = "#d97706"
-TEXT = "#111827"
-TEXT_MUTED = "#6b7280"
+BORDER = "#e2e5f0"
+ACCENT = "#5b50e8"
+ACCENT_DARK = "#4338ca"
+ACCENT_LIGHT = "#ede9fe"
+DANGER = "#e53e3e"
+SUCCESS = "#22863a"
+WARN_COLOR = "#c08000"
+TEXT = "#1a1f36"
+TEXT_MUTED = "#74778b"
+STEP1_BG = "#ede9fe"   # 연보라 - 복사 단계
+STEP2_BG = "#d1fae5"   # 연초록 - 저장 단계
 FONT_BASE = (_FONT, 11)
 FONT_BOLD = (_FONT, 11, "bold")
 FONT_TITLE = (_FONT, 17, "bold")
@@ -62,12 +64,15 @@ class App(tk.Tk):
 
         # 수동 모드 상태
         self.manual_files: list[Path] = []
-        self.prompts_dir = tk.StringVar()
+        self.manual_selected_idx: int = -1
+        self.manual_done_stems: set[str] = set()
         self.manual_template_path = tk.StringVar()
-        self.responses_dir = tk.StringVar()
-        self.manual_response_files: dict[str, Path] = {}  # stem -> path, 엑셀 합치기 단계에서 폴더 대신 파일 개별 선택 시 사용
         self.manual_output_path = tk.StringVar()
         self.manual_coder_id = tk.StringVar()
+        # 하위 호환 (reset_all에서 참조)
+        self.prompts_dir = tk.StringVar()
+        self.responses_dir = tk.StringVar()
+        self.manual_response_files: dict[str, Path] = {}
 
         self._log_queue: queue.Queue[tuple[str, str | None]] = queue.Queue()
         self._worker: threading.Thread | None = None
@@ -93,6 +98,7 @@ class App(tk.Tk):
         style.configure("Title.TLabel", background=BG, font=FONT_TITLE, foreground=TEXT)
         style.configure("Section.TLabel", background=CARD_BG, font=FONT_BOLD, foreground=TEXT)
         style.configure("Info.TLabel", background=CARD_BG, font=(_FONT, 10), foreground=TEXT_MUTED)
+        style.configure("TSeparator", background=BORDER)
         style.configure("TEntry", padding=7, fieldbackground="#fafbff",
                         bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER)
         style.configure("TCheckbutton", background=CARD_BG, font=FONT_BASE)
@@ -279,16 +285,13 @@ class App(tk.Tk):
 
         # 수동 모드
         self.manual_files = []
-        self.prompts_dir.set("")
+        self.manual_selected_idx = -1
+        self.manual_done_stems = set()
         self.manual_template_path.set("")
-        self.responses_dir.set("")
-        self.manual_response_files = {}
         self.manual_output_path.set("")
         self.manual_coder_id.set("")
-        self.manual_file_count_label.config(text="선택된 파일 없음")
-        self.manual_response_files_label.config(text="")
         self.manual_paste_text.delete("1.0", "end")
-        self._manual_refresh_paste_combo()
+        self._manual_update_file_list()
 
         # 요약 + 로그
         self.log.delete("1.0", "end")
@@ -534,119 +537,142 @@ class App(tk.Tk):
 
     # ================= 수동 모드 =================
     def _build_manual_tab(self, parent):
-        outer, card = self._card(parent)
-        outer.pack(fill="x", pady=(0, 12))
-        self._section_header(card, "ℹ", "API 키 없이 진행하는 방법")
-        ttk.Label(
-            card,
-            style="Info.TLabel",
-            justify="left",
-            wraplength=680,
-            text=(
-                "① 아래에서 판결문을 선택하고 '프롬프트 파일 만들기'를 누르면, 파일마다 "
-                "claude.ai 채팅창에 붙여넣을 텍스트(.txt)가 생성됩니다.\n"
-                "② 생성된 .txt 파일을 열어 내용 전체를 복사한 뒤, 평소 쓰는 claude.ai 채팅에 "
-                "붙여넣고 답장을 받습니다.\n"
-                "③ 받은 답변 전체(JSON)를 복사해서, 아래 '응답 붙여넣어 저장하기'에 붙여넣고 "
-                "저장 버튼을 누르면 파일명을 신경 쓰지 않아도 자동으로 올바른 이름으로 저장됩니다.\n"
-                "④ 모든 판결문의 응답을 다 모았으면 '엑셀로 합치기'를 눌러 코딩시트를 완성합니다."
-            ),
-        ).pack(anchor="w")
+        # ── 엑셀 출력 설정 카드 ──────────────────────────────────
+        outer_cfg, card_cfg = self._card(parent)
+        outer_cfg.pack(fill="x", pady=(0, 12))
+        self._section_header(card_cfg, "⚙", "엑셀 출력 설정")
+        self._labeled_path_row(card_cfg, "코딩시트 템플릿 (xlsx)", self.manual_template_path, self._manual_pick_template)
+        self._labeled_path_row(card_cfg, "결과 저장 위치 (xlsx)", self.manual_output_path, self._manual_pick_output)
+        id_row = ttk.Frame(card_cfg, style="Card.TFrame")
+        id_row.pack(fill="x")
+        ttk.Label(id_row, text="코딩 담당자 ID", style="Card.TLabel", width=18).pack(side="left")
+        ttk.Entry(id_row, textvariable=self.manual_coder_id, width=16).pack(side="left")
 
-        # 판결문 선택 (수동 모드 전용)
-        outer2, card2 = self._card(parent)
-        outer2.pack(fill="x", pady=(0, 12))
-        self._section_header(card2, "1", "판결문 선택")
+        # ── 파일 선택 + 두 패널 카드 ─────────────────────────────
+        outer_main, card_main = self._card(parent)
+        outer_main.pack(fill="both", expand=True)
+        self._section_header(card_main, "1→3", "판결문 선택 → 복사 → 붙여넣기 → 저장")
 
-        btn_row = ttk.Frame(card2, style="Card.TFrame")
-        btn_row.pack(fill="x")
-        ttk.Button(btn_row, text="📁 폴더에서 전체 선택", style="Ghost.TButton",
+        # 파일 선택 버튼 행
+        btn_row = ttk.Frame(card_main, style="Card.TFrame")
+        btn_row.pack(fill="x", pady=(0, 10))
+        ttk.Button(btn_row, text="📁  폴더 선택", style="Ghost.TButton",
                    command=self._manual_pick_dir).pack(side="left")
-        ttk.Button(btn_row, text="📄 파일 개별 선택", style="Ghost.TButton",
+        ttk.Button(btn_row, text="📄  파일 선택", style="Ghost.TButton",
                    command=self._manual_pick_files).pack(side="left", padx=8)
         ttk.Button(btn_row, text="비우기", style="Ghost.TButton",
                    command=self._manual_clear_files).pack(side="left")
+        self.manual_file_count_label = ttk.Label(btn_row, text="선택된 파일 없음", style="Muted.TLabel")
+        self.manual_file_count_label.pack(side="left", padx=(12, 0))
 
-        self.manual_file_count_label = ttk.Label(card2, text="선택된 파일 없음", style="Muted.TLabel")
-        self.manual_file_count_label.pack(anchor="w", pady=(8, 0))
+        # ── 두 패널 분할 ─────────────────────────────────────────
+        split = tk.Frame(card_main, bg=CARD_BG)
+        split.pack(fill="both", expand=True)
 
-        # 1단계
-        outer3, card3 = self._card(parent)
-        outer3.pack(fill="x", pady=(0, 12))
-        self._section_header(card3, "2", "프롬프트 파일 만들기")
-        self._labeled_path_row(card3, "프롬프트 저장 폴더", self.prompts_dir, self._manual_pick_prompts_dir)
-        self.manual_prompts_btn = ttk.Button(card3, text="📝  프롬프트 파일 만들기", style="Accent.TButton",
-                                             command=self._manual_make_prompts)
-        self.manual_prompts_btn.pack(anchor="w", pady=(6, 0))
+        # 왼쪽: 파일 목록
+        left_wrap = tk.Frame(split, bg=BORDER, width=222)
+        left_wrap.pack(side="left", fill="y", padx=(0, 10))
+        left_wrap.pack_propagate(False)
+        left_inner = tk.Frame(left_wrap, bg=CARD_BG)
+        left_inner.pack(fill="both", expand=True, padx=1, pady=1)
 
-        # 응답 붙여넣어 저장하기
-        outer_paste, card_paste = self._card(parent)
-        outer_paste.pack(fill="x", pady=(0, 12))
-        self._section_header(card_paste, "3", "응답 붙여넣어 저장하기")
-        self._labeled_path_row(card_paste, "응답 저장 폴더", self.responses_dir, self._manual_pick_responses_dir)
+        self.manual_file_listbox = tk.Listbox(
+            left_inner,
+            font=(_FONT, 10), bg=CARD_BG, fg=TEXT,
+            selectbackground=ACCENT_LIGHT, selectforeground=ACCENT,
+            relief="flat", bd=0, highlightthickness=0,
+            activestyle="none", height=14,
+        )
+        list_scroll = ttk.Scrollbar(left_inner, command=self.manual_file_listbox.yview)
+        self.manual_file_listbox.config(yscrollcommand=list_scroll.set)
+        list_scroll.pack(side="right", fill="y")
+        self.manual_file_listbox.pack(side="left", fill="both", expand=True)
+        self.manual_file_listbox.bind("<<ListboxSelect>>", self._manual_on_file_select)
 
-        ttk.Label(
-            card_paste,
-            style="Info.TLabel",
-            text="이미 다른 곳에서 만들어 둔 .json 응답 파일이 있다면, 폴더에 미리 옮겨둘 필요 없이 "
-                 "아래 버튼으로 바로 추가할 수 있습니다 (파일명이 판결문과 같아야 합니다).",
-            wraplength=520, justify="left",
-        ).pack(anchor="w", pady=(0, 4))
-        ttk.Button(card_paste, text="📄  이미 있는 JSON 파일 추가", style="Ghost.TButton",
-                   command=self._manual_add_response_files).pack(anchor="w", pady=(0, 10))
+        # 오른쪽: 처리 패널
+        right = tk.Frame(split, bg=CARD_BG)
+        right.pack(side="left", fill="both", expand=True)
 
-        select_row = ttk.Frame(card_paste, style="Card.TFrame")
-        select_row.pack(fill="x", pady=(4, 6))
-        ttk.Label(select_row, text="판결문 선택", style="Card.TLabel", width=18).pack(side="left")
-        self.manual_paste_combo = ttk.Combobox(select_row, state="readonly", width=40)
-        self.manual_paste_combo.pack(side="left", fill="x", expand=True)
-        self.manual_paste_combo.bind("<<ComboboxSelected>>", self._manual_on_paste_select)
+        self.manual_detail_label = tk.Label(
+            right, text="← 왼쪽에서 판결문을 선택하세요",
+            bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11, "bold"), anchor="w",
+        )
+        self.manual_detail_label.pack(fill="x", pady=(0, 8))
 
-        self.manual_paste_status_label = ttk.Label(card_paste, text="", style="Muted.TLabel")
-        self.manual_paste_status_label.pack(anchor="w", pady=(0, 6))
+        # 미리보기 토글
+        self.manual_preview_btn = ttk.Button(
+            right, text="👁  판결문 내용 미리보기 ▼",
+            style="Ghost.TButton", command=self._manual_toggle_preview, state="disabled",
+        )
+        self.manual_preview_btn.pack(anchor="w", pady=(0, 4))
+
+        self.manual_preview_frame = tk.Frame(right, bg=CARD_BG)
+        self.manual_preview_text = scrolledtext.ScrolledText(
+            self.manual_preview_frame, height=10, font=("Menlo", 9),
+            bg="#f8f9fa", fg=TEXT_MUTED,
+            relief="flat", highlightthickness=1, highlightbackground=BORDER,
+            padx=8, pady=6, state="disabled", wrap="word",
+        )
+        self.manual_preview_text.pack(fill="both", expand=True)
+
+        # ① 프롬프트 복사 박스
+        step1_box = tk.Frame(right, bg=STEP1_BG, padx=12, pady=10)
+        step1_box.pack(fill="x", pady=(8, 6))
+
+        step1_title_row = tk.Frame(step1_box, bg=STEP1_BG)
+        step1_title_row.pack(fill="x", pady=(0, 6))
+        badge1 = tk.Label(step1_title_row, text=" ① ", bg=ACCENT, fg="white",
+                          font=(_FONT, 9, "bold"), padx=4, pady=2)
+        badge1.pack(side="left")
+        tk.Label(step1_title_row, text="  claude.ai에 보낼 프롬프트 복사",
+                 bg=STEP1_BG, fg=TEXT, font=(_FONT, 11, "bold")).pack(side="left")
+
+        self.manual_copy_prompt_btn = tk.Button(
+            step1_box, text="📋  클립보드에 복사",
+            font=(_FONT, 11, "bold"), bg=ACCENT, fg="white",
+            relief="flat", bd=0, padx=14, pady=8, cursor="hand2",
+            activebackground=ACCENT_DARK, activeforeground="white",
+            command=self._manual_copy_prompt, state="disabled",
+        )
+        self.manual_copy_prompt_btn.pack(anchor="w")
+
+        self.manual_copy_status_label = tk.Label(
+            step1_box, text="", bg=STEP1_BG, fg=ACCENT, font=(_FONT, 10), anchor="w",
+        )
+        self.manual_copy_status_label.pack(fill="x", pady=(4, 0))
+
+        # ② 응답 붙여넣기 박스
+        step2_box = tk.Frame(right, bg=STEP2_BG, padx=12, pady=10)
+        step2_box.pack(fill="both", expand=True, pady=(0, 0))
+
+        step2_title_row = tk.Frame(step2_box, bg=STEP2_BG)
+        step2_title_row.pack(fill="x", pady=(0, 6))
+        badge2 = tk.Label(step2_title_row, text=" ② ", bg=SUCCESS, fg="white",
+                          font=(_FONT, 9, "bold"), padx=4, pady=2)
+        badge2.pack(side="left")
+        tk.Label(step2_title_row, text="  claude.ai 응답(JSON) 붙여넣고 저장",
+                 bg=STEP2_BG, fg=TEXT, font=(_FONT, 11, "bold")).pack(side="left")
 
         self.manual_paste_text = scrolledtext.ScrolledText(
-            card_paste, height=8, font=("Menlo", 10), bg="#fafbff", fg=TEXT,
-            relief="flat", highlightthickness=1, highlightbackground=BORDER,
+            step2_box, height=8, font=("Menlo", 10), bg="#f0faf4", fg=TEXT,
+            relief="flat", highlightthickness=1, highlightbackground="#bbf7d0",
             padx=10, pady=8,
         )
         self.manual_paste_text.pack(fill="both", expand=True, pady=(0, 8))
         self._add_text_context_menu(self.manual_paste_text)
 
-        paste_btn_row = ttk.Frame(card_paste, style="Card.TFrame")
-        paste_btn_row.pack(fill="x")
-        ttk.Button(paste_btn_row, text="💾  저장하고 다음 판결문으로", style="Accent.TButton",
-                   command=self._manual_save_pasted_response).pack(side="left")
-        ttk.Button(paste_btn_row, text="지우기", style="Ghost.TButton",
+        save_row = tk.Frame(step2_box, bg=STEP2_BG)
+        save_row.pack(fill="x")
+        self.manual_save_btn = tk.Button(
+            save_row, text="✅  엑셀에 저장",
+            font=(_FONT, 11, "bold"), bg=SUCCESS, fg="white",
+            relief="flat", bd=0, padx=14, pady=8, cursor="hand2",
+            activebackground="#166534", activeforeground="white",
+            command=self._manual_save_direct, state="disabled",
+        )
+        self.manual_save_btn.pack(side="left")
+        ttk.Button(save_row, text="지우기", style="Ghost.TButton",
                    command=lambda: self.manual_paste_text.delete("1.0", "end")).pack(side="left", padx=8)
-
-        # 2단계
-        outer4, card4 = self._card(parent)
-        outer4.pack(fill="x", pady=(0, 0))
-        self._section_header(card4, "4", "응답을 엑셀로 합치기")
-        self._labeled_path_row(card4, "코딩시트 템플릿 (xlsx)", self.manual_template_path, self._manual_pick_template)
-        self._labeled_path_row(card4, "응답(.json) 폴더", self.responses_dir, self._manual_pick_responses_dir)
-
-        or_row = ttk.Frame(card4, style="Card.TFrame")
-        or_row.pack(fill="x", pady=(0, 8))
-        ttk.Label(or_row, text="", width=18).pack(side="left")
-        ttk.Button(or_row, text="또는 응답 파일 개별 선택", style="Ghost.TButton",
-                   command=self._manual_pick_response_files_for_import).pack(side="left")
-        ttk.Button(or_row, text="선택 지우기", style="Ghost.TButton",
-                   command=self._manual_clear_response_files_for_import).pack(side="left", padx=8)
-        self.manual_response_files_label = ttk.Label(or_row, text="", style="Muted.TLabel")
-        self.manual_response_files_label.pack(side="left", padx=8)
-
-        self._labeled_path_row(card4, "결과 저장 위치 (xlsx)", self.manual_output_path, self._manual_pick_output)
-
-        row = ttk.Frame(card4, style="Card.TFrame")
-        row.pack(fill="x", pady=(0, 8))
-        ttk.Label(row, text="코딩 담당자 ID", style="Card.TLabel", width=18).pack(side="left")
-        ttk.Entry(row, textvariable=self.manual_coder_id, width=16).pack(side="left")
-
-        self.manual_import_btn = ttk.Button(card4, text="📊  엑셀로 합치기", style="Accent.TButton",
-                                            command=self._manual_import)
-        self.manual_import_btn.pack(anchor="w", pady=(6, 0))
 
     def _manual_pick_dir(self):
         path = filedialog.askdirectory()
@@ -669,19 +695,149 @@ class App(tk.Tk):
             if str(f) not in existing:
                 self.manual_files.append(f)
                 existing.add(str(f))
-        n = len(self.manual_files)
-        self.manual_file_count_label.config(text=f"{n}개 파일 선택됨" if n else "선택된 파일 없음")
-        self._manual_refresh_paste_combo()
+        self._manual_update_file_list()
 
     def _manual_clear_files(self):
         self.manual_files = []
-        self.manual_file_count_label.config(text="선택된 파일 없음")
-        self._manual_refresh_paste_combo()
+        self.manual_selected_idx = -1
+        self.manual_done_stems = set()
+        self._manual_update_file_list()
+        self.manual_detail_label.config(text="← 왼쪽에서 판결문을 선택하세요", fg=TEXT_MUTED)
+        self.manual_preview_btn.config(state="disabled")
+        self.manual_copy_prompt_btn.config(state="disabled")
+        self.manual_save_btn.config(state="disabled")
+        self.manual_copy_status_label.config(text="")
 
-    def _manual_pick_prompts_dir(self):
-        path = filedialog.askdirectory()
-        if path:
-            self.prompts_dir.set(path)
+    def _manual_update_file_list(self):
+        self.manual_file_listbox.delete(0, "end")
+        for f in self.manual_files:
+            icon = "✅" if f.stem in self.manual_done_stems else "⬜"
+            self.manual_file_listbox.insert("end", f"  {icon}  {f.name}")
+        n = len(self.manual_files)
+        self.manual_file_count_label.config(text=f"{n}개 파일 선택됨" if n else "선택된 파일 없음")
+
+    def _manual_on_file_select(self, event=None):
+        sel = self.manual_file_listbox.curselection()
+        if not sel:
+            return
+        idx = sel[0]
+        self.manual_selected_idx = idx
+        path = self.manual_files[idx]
+        done = path.stem in self.manual_done_stems
+        self.manual_detail_label.config(
+            text=f"{'✅' if done else '📄'}  {path.name}", fg=SUCCESS if done else TEXT,
+        )
+        self.manual_preview_btn.config(state="normal")
+        self.manual_copy_prompt_btn.config(state="normal")
+        self.manual_save_btn.config(state="normal")
+        self.manual_copy_status_label.config(text="")
+        if self.manual_preview_frame.winfo_ismapped():
+            self._manual_load_preview(path)
+
+    def _manual_toggle_preview(self):
+        if self.manual_preview_frame.winfo_ismapped():
+            self.manual_preview_frame.pack_forget()
+            self.manual_preview_btn.config(text="👁  판결문 내용 미리보기 ▼")
+        else:
+            self.manual_preview_frame.pack(fill="both", expand=True, pady=(0, 8))
+            self.manual_preview_btn.config(text="👁  판결문 내용 미리보기 ▲")
+            if 0 <= self.manual_selected_idx < len(self.manual_files):
+                self._manual_load_preview(self.manual_files[self.manual_selected_idx])
+
+    def _manual_load_preview(self, path: Path):
+        self.manual_preview_text.config(state="normal")
+        self.manual_preview_text.delete("1.0", "end")
+        self.manual_preview_text.insert("end", "불러오는 중...")
+        self.manual_preview_text.config(state="disabled")
+        threading.Thread(target=self._manual_load_preview_worker, args=(path,), daemon=True).start()
+
+    def _manual_load_preview_worker(self, path: Path):
+        try:
+            text = extract_text(path)
+            preview = text[:4000] + (f"\n\n... (이하 {len(text)-4000:,}자 생략)" if len(text) > 4000 else "")
+        except Exception as e:
+            preview = f"[미리보기 오류: {e}]"
+        self.after(0, lambda t=preview: self._manual_set_preview(t))
+
+    def _manual_set_preview(self, text: str):
+        self.manual_preview_text.config(state="normal")
+        self.manual_preview_text.delete("1.0", "end")
+        self.manual_preview_text.insert("end", text)
+        self.manual_preview_text.config(state="disabled")
+
+    def _manual_copy_prompt(self):
+        if not (0 <= self.manual_selected_idx < len(self.manual_files)):
+            return
+        path = self.manual_files[self.manual_selected_idx]
+        self.manual_copy_prompt_btn.config(state="disabled", text="⏳  생성 중...")
+        self.manual_copy_status_label.config(text="")
+
+        def _worker():
+            try:
+                text = extract_text(path)
+                prompt = build_prompt(text)
+                self.after(0, lambda: self._manual_do_copy(prompt, path.name))
+            except Exception as e:
+                self.after(0, lambda: (
+                    self.manual_copy_prompt_btn.config(state="normal", text="📋  클립보드에 복사"),
+                    self._log(f"프롬프트 생성 실패: {e}", "err"),
+                ))
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _manual_do_copy(self, text: str, filename: str):
+        self.clipboard_clear()
+        self.clipboard_append(text)
+        self.manual_copy_prompt_btn.config(state="normal", text="📋  클립보드에 복사")
+        self.manual_copy_status_label.config(
+            text="✅  복사됨! claude.ai 채팅창에 붙여넣고 응답을 받으세요.",
+        )
+        self._log(f"프롬프트 복사됨: {filename}", "ok")
+
+    def _manual_save_direct(self):
+        if not self.manual_template_path.get():
+            messagebox.showerror("오류", "코딩시트 템플릿(.xlsx)을 먼저 선택하세요.")
+            return
+        if not self.manual_output_path.get():
+            messagebox.showerror("오류", "결과 저장 위치(.xlsx)를 선택하세요.")
+            return
+        if not (0 <= self.manual_selected_idx < len(self.manual_files)):
+            messagebox.showerror("오류", "왼쪽 목록에서 판결문을 선택하세요.")
+            return
+        content = self.manual_paste_text.get("1.0", "end").strip()
+        if not content:
+            messagebox.showerror("오류", "claude.ai 응답(JSON)을 붙여넣으세요.")
+            return
+        source = self.manual_files[self.manual_selected_idx]
+        try:
+            extracted = parse_json_response(content)
+        except Exception as e:
+            messagebox.showerror(
+                "JSON 형식 오류",
+                f"붙여넣은 내용이 올바른 JSON이 아닙니다.\n{e}\n\nclaude.ai 응답 전체를 그대로 붙여넣어 보세요.",
+            )
+            return
+        row = build_row(source, extracted, coder_id=self.manual_coder_id.get())
+        self._safe_write_rows(
+            Path(self.manual_template_path.get()),
+            Path(self.manual_output_path.get()),
+            [row],
+        )
+        self.manual_done_stems.add(source.stem)
+        self.manual_paste_text.delete("1.0", "end")
+        self.manual_copy_status_label.config(text="")
+        self._manual_update_file_list()
+        self.manual_detail_label.config(text=f"✅  {source.name}", fg=SUCCESS)
+        # 다음 미처리 파일 자동 선택
+        not_done = [i for i, f in enumerate(self.manual_files) if f.stem not in self.manual_done_stems]
+        if not_done:
+            ni = not_done[0]
+            self.manual_file_listbox.selection_clear(0, "end")
+            self.manual_file_listbox.selection_set(ni)
+            self.manual_file_listbox.see(ni)
+            self.manual_selected_idx = ni
+            self.manual_detail_label.config(text=f"📄  {self.manual_files[ni].name}", fg=TEXT)
+        else:
+            self._log("🎉 모든 판결문 처리 완료!", "ok")
 
     def _manual_pick_template(self):
         path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
