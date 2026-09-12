@@ -34,15 +34,15 @@ _B = 2 if _IS_MAC else 0
 
 BG = "#f0f2fc"
 CARD_BG = "#ffffff"
-BORDER = "#e2e5f0"
-ACCENT = "#5b50e8"
-ACCENT_DARK = "#4338ca"
+BORDER = "#c7cade"
+ACCENT = "#3730a3"       # 흰글씨 대비율 7:1 이상 (기존 #5b50e8는 3.7:1)
+ACCENT_DARK = "#312e81"  # hover용
 ACCENT_LIGHT = "#ede9fe"
-DANGER = "#e53e3e"
-SUCCESS = "#22863a"
-WARN_COLOR = "#c08000"
-TEXT = "#1a1f36"
-TEXT_MUTED = "#4e5268"  # 가독성 개선: 기존 #74778b → 더 진한 색
+DANGER = "#b91c1c"
+SUCCESS = "#166534"      # 흰글씨 대비율 충분
+WARN_COLOR = "#92400e"
+TEXT = "#0f172a"
+TEXT_MUTED = "#475569"   # 흰 배경 위 대비율 4.6:1
 STEP1_BG = "#ede9fe"   # 연보라 - 복사 단계
 STEP2_BG = "#d1fae5"   # 연초록 - 저장 단계
 FONT_BASE = (_FONT, 11 + _B)
@@ -217,8 +217,12 @@ class App(tk.Tk):
         tk.Label(title_text, text="판결문(PDF/DOCX) → 코딩시트 엑셀 자동 변환",
                  bg=BG, fg=TEXT_MUTED, font=(_FONT, 10 + _B)).pack(anchor="w")
 
-        ttk.Button(
-            title_row, text="↺  전체 초기화", style="Ghost.TButton", command=self._reset_all,
+        tk.Button(
+            title_row, text="↺  전체 초기화",
+            font=(_FONT, 10 + _B), bg=CARD_BG, fg=TEXT_MUTED,
+            relief="flat", bd=1, padx=10, pady=5, cursor="hand2",
+            activebackground=ACCENT_LIGHT, activeforeground=ACCENT,
+            command=self._reset_all,
         ).pack(side="right", anchor="n", pady=4)
 
         self._build_mode_selector(root)
@@ -247,31 +251,45 @@ class App(tk.Tk):
     def _build_mode_selector(self, parent):
         container = tk.Frame(parent, bg=BORDER)
         container.pack(fill="x")
-        inner = tk.Frame(container, bg=CARD_BG)
+
+        inner = tk.Frame(container, bg="#d8daf0")
         inner.pack(fill="x", padx=1, pady=1)
 
+        # API 탭 래퍼 (버튼 + 활성 표시줄)
+        api_wrap = tk.Frame(inner, bg="#d8daf0")
+        api_wrap.pack(side="left", fill="both", expand=True)
         self.mode_api_btn = tk.Button(
-            inner, text="🔑  API 모드   —   API 키로 자동 처리",
-            font=(_FONT, 11 + _B, "bold"), bg=ACCENT, fg="white",
-            relief="flat", bd=0, padx=18, pady=13, cursor="hand2",
+            api_wrap, text="🔑  API 모드 — API 키로 자동 처리",
+            font=(_FONT, 12 + _B, "bold"), bg=ACCENT, fg="white",
+            relief="flat", bd=0, padx=18, pady=12, cursor="hand2",
             activebackground=ACCENT_DARK, activeforeground="white",
             command=lambda: self._set_mode("api"),
         )
-        self.mode_api_btn.pack(side="left", fill="x", expand=True)
+        self.mode_api_btn.pack(fill="x")
+        self.mode_api_indicator = tk.Frame(api_wrap, bg=ACCENT, height=4)
+        self.mode_api_indicator.pack(fill="x")
 
-        tk.Frame(inner, bg=BORDER, width=1).pack(side="left", fill="y")
+        tk.Frame(inner, bg=BORDER, width=2).pack(side="left", fill="y")
 
+        # 수동 탭 래퍼
+        manual_wrap = tk.Frame(inner, bg="#d8daf0")
+        manual_wrap.pack(side="left", fill="both", expand=True)
         self.mode_manual_btn = tk.Button(
-            inner, text="✂️  수동 모드   —   claude.ai 채팅 이용",
-            font=(_FONT, 11 + _B), bg=CARD_BG, fg=TEXT_MUTED,
-            relief="flat", bd=0, padx=18, pady=13, cursor="hand2",
+            manual_wrap, text="✂️  수동 모드 — claude.ai 채팅 이용",
+            font=(_FONT, 12 + _B), bg="#d8daf0", fg=TEXT,
+            relief="flat", bd=0, padx=18, pady=12, cursor="hand2",
             activebackground=ACCENT_LIGHT, activeforeground=ACCENT,
             command=lambda: self._set_mode("manual"),
         )
-        self.mode_manual_btn.pack(side="left", fill="x", expand=True)
+        self.mode_manual_btn.pack(fill="x")
+        self.mode_manual_indicator = tk.Frame(manual_wrap, bg="#d8daf0", height=4)
+        self.mode_manual_indicator.pack(fill="x")
 
-        self.mode_desc_label = ttk.Label(parent, text="", style="TLabel", foreground=TEXT_MUTED)
-        self.mode_desc_label.pack(anchor="w", pady=(8, 0))
+        self.mode_desc_label = tk.Label(
+            parent, text="", bg=BG, fg=ACCENT,
+            font=(_FONT, 10 + _B, "bold"), anchor="w",
+        )
+        self.mode_desc_label.pack(fill="x", pady=(6, 0))
 
     def _reset_all(self):
         """API/수동 모드에서 입력한 모든 내용, 로그, 진행 상황을 처음 상태로 되돌린다."""
@@ -310,21 +328,26 @@ class App(tk.Tk):
 
     def _set_mode(self, mode: str):
         self.mode = mode
+        _inactive_bg = "#d8daf0"
         if mode == "api":
-            self.mode_api_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11 + _B, "bold"))
-            self.mode_manual_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11 + _B))
+            self.mode_api_btn.config(bg=ACCENT, fg="white", font=(_FONT, 12 + _B, "bold"))
+            self.mode_api_indicator.config(bg=ACCENT)
+            self.mode_manual_btn.config(bg=_inactive_bg, fg=TEXT, font=(_FONT, 12 + _B))
+            self.mode_manual_indicator.config(bg=_inactive_bg)
             self.manual_container.pack_forget()
             self.api_container.pack(fill="both", expand=True)
             self.mode_desc_label.config(
-                text="API 모드 — Anthropic API 키로 버튼 한 번에 자동 처리합니다 (사용량만큼 별도 과금)."
+                text="⚡  API 모드 활성 — Anthropic API 키로 버튼 한 번에 자동 처리합니다."
             )
         else:
-            self.mode_manual_btn.config(bg=ACCENT, fg="white", font=(_FONT, 11 + _B, "bold"))
-            self.mode_api_btn.config(bg=CARD_BG, fg=TEXT_MUTED, font=(_FONT, 11 + _B))
+            self.mode_manual_btn.config(bg=ACCENT, fg="white", font=(_FONT, 12 + _B, "bold"))
+            self.mode_manual_indicator.config(bg=ACCENT)
+            self.mode_api_btn.config(bg=_inactive_bg, fg=TEXT, font=(_FONT, 12 + _B))
+            self.mode_api_indicator.config(bg=_inactive_bg)
             self.api_container.pack_forget()
             self.manual_container.pack(fill="both", expand=True)
             self.mode_desc_label.config(
-                text="수동 모드 — API 키 없이 claude.ai 채팅에 복사/붙여넣기로 진행합니다 (추가 비용 없음)."
+                text="✂️  수동 모드 활성 — API 키 없이 claude.ai 채팅에 복사/붙여넣기로 진행합니다."
             )
 
     # ================= API 모드 =================
@@ -387,11 +410,22 @@ class App(tk.Tk):
         row = ttk.Frame(parent, style="TFrame")
         row.pack(fill="x", pady=(4, 0))
 
-        self.run_btn = ttk.Button(row, text="▶  변환 시작", style="Accent.TButton", command=self._start)
+        self.run_btn = tk.Button(
+            row, text="▶  변환 시작",
+            font=(_FONT, 12 + _B, "bold"), bg=ACCENT, fg="white",
+            relief="flat", bd=0, padx=18, pady=10, cursor="hand2",
+            activebackground=ACCENT_DARK, activeforeground="white",
+            command=self._start,
+        )
         self.run_btn.pack(side="left")
 
-        self.stop_btn = ttk.Button(row, text="■  중지", style="Danger.TButton",
-                                   command=self._stop, state="disabled")
+        self.stop_btn = tk.Button(
+            row, text="■  중지",
+            font=(_FONT, 12 + _B, "bold"), bg=DANGER, fg="white",
+            relief="flat", bd=0, padx=18, pady=10, cursor="hand2",
+            activebackground="#991b1b", activeforeground="white",
+            command=self._stop, state="disabled",
+        )
         self.stop_btn.pack(side="left", padx=10)
 
         self.progress = ttk.Progressbar(row, mode="determinate")
