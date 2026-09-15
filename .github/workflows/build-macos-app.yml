@@ -43,6 +43,7 @@ jobs:
             --collect-all pypdfium2 \
             --collect-all anthropic \
             --hidden-import docx \
+            --hidden-import olefile \
             gui.py
           cd dist
           zip -r -y "${APP_NAME}-macOS.zip" "${APP_NAME}.app"

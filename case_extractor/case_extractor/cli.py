@@ -1,4 +1,4 @@
-"""판결문(PDF/DOCX) -> 코딩시트 엑셀 변환 CLI.
+"""판결문(PDF/DOCX/DOC) -> 코딩시트 엑셀 변환 CLI.
 
 사용 예 (폴더 지정):
     python -m case_extractor.cli \\
@@ -29,11 +29,11 @@ from .validate import NotJudgmentLikelyError, looks_like_judgment
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="판결문 PDF/DOCX를 코딩시트 엑셀로 변환합니다.")
+    p = argparse.ArgumentParser(description="판결문 PDF/DOCX/DOC를 코딩시트 엑셀로 변환합니다.")
     p.add_argument("--template", required=True, type=Path, help="열/코딩북이 정의된 원본 코딩시트 xlsx 경로")
     group = p.add_mutually_exclusive_group(required=True)
-    group.add_argument("--input-dir", type=Path, help="판결문 PDF/DOCX 파일들이 있는 폴더")
-    group.add_argument("--input-files", type=Path, nargs="+", help="판결문 PDF/DOCX 파일 경로 목록 (여러 개 가능)")
+    group.add_argument("--input-dir", type=Path, help="판결문 PDF/DOCX/DOC 파일들이 있는 폴더")
+    group.add_argument("--input-files", type=Path, nargs="+", help="판결문 PDF/DOCX/DOC 파일 경로 목록 (여러 개 가능)")
     p.add_argument("--output", required=True, type=Path, help="결과를 저장할 xlsx 경로 (템플릿과 달라야 안전함)")
     p.add_argument("--coder-id", default="", help="coder_id 컬럼에 채울 코딩 담당자 식별자")
     p.add_argument("--id-prefix", default="DF-2024-", help="case_id 자동 생성 시 사용할 접두어")
@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         files = find_case_files(args.input_dir)
         if not files:
-            print(f"오류: {args.input_dir} 폴더에서 .pdf/.docx 파일을 찾지 못했습니다.", file=sys.stderr)
+            print(f"오류: {args.input_dir} 폴더에서 .pdf/.docx/.doc 파일을 찾지 못했습니다.", file=sys.stderr)
             return 1
     else:
         files = args.input_files

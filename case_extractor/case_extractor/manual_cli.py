@@ -114,8 +114,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     common = argparse.ArgumentParser(add_help=False)
     group = common.add_mutually_exclusive_group(required=True)
-    group.add_argument("--input-dir", type=Path, help="판결문 PDF/DOCX 파일들이 있는 폴더")
-    group.add_argument("--input-files", type=Path, nargs="+", help="판결문 PDF/DOCX 파일 경로 목록")
+    group.add_argument("--input-dir", type=Path, help="판결문 PDF/DOCX/DOC 파일들이 있는 폴더")
+    group.add_argument("--input-files", type=Path, nargs="+", help="판결문 PDF/DOCX/DOC 파일 경로 목록")
 
     mp = sub.add_parser("make-prompts", parents=[common], help="판결문마다 프롬프트 .txt 생성")
     mp.add_argument("--prompts-dir", required=True, type=Path, help="프롬프트 .txt를 저장할 폴더")

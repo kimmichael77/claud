@@ -215,7 +215,7 @@ class App(tk.Tk):
         title_text.pack(side="left")
         tk.Label(title_text, text="Case Law Coding Sheet Converter", bg=BG, fg=TEXT,
                  font=(_FONT, 18 + _B, "bold")).pack(anchor="w")
-        tk.Label(title_text, text="판결문(PDF/DOCX) → 코딩시트 엑셀 자동 변환",
+        tk.Label(title_text, text="판결문(PDF/DOCX/DOC) → 코딩시트 엑셀 자동 변환",
                  bg=BG, fg=TEXT_MUTED, font=(_FONT, 10 + _B)).pack(anchor="w")
 
         tk.Button(
@@ -449,12 +449,12 @@ class App(tk.Tk):
             return
         files = find_case_files(Path(path))
         if not files:
-            messagebox.showwarning("알림", "선택한 폴더에서 .pdf/.docx 파일을 찾지 못했습니다.")
+            messagebox.showwarning("알림", "선택한 폴더에서 .pdf/.docx/.doc 파일을 찾지 못했습니다.")
             return
         self._add_files(files)
 
     def _pick_input_files(self):
-        paths = filedialog.askopenfilenames(filetypes=[("판결문 파일", "*.pdf *.docx"), ("모든 파일", "*.*")])
+        paths = filedialog.askopenfilenames(filetypes=[("판결문 파일", "*.pdf *.docx *.doc"), ("모든 파일", "*.*")])
         if paths:
             self._add_files([Path(p) for p in paths])
 
@@ -785,12 +785,12 @@ class App(tk.Tk):
             return
         files = find_case_files(Path(path))
         if not files:
-            messagebox.showwarning("알림", "선택한 폴더에서 .pdf/.docx 파일을 찾지 못했습니다.")
+            messagebox.showwarning("알림", "선택한 폴더에서 .pdf/.docx/.doc 파일을 찾지 못했습니다.")
             return
         self._manual_add_files(files)
 
     def _manual_pick_files(self):
-        paths = filedialog.askopenfilenames(filetypes=[("판결문 파일", "*.pdf *.docx"), ("모든 파일", "*.*")])
+        paths = filedialog.askopenfilenames(filetypes=[("판결문 파일", "*.pdf *.docx *.doc"), ("모든 파일", "*.*")])
         if paths:
             self._manual_add_files([Path(p) for p in paths])
 
@@ -834,7 +834,7 @@ class App(tk.Tk):
             text=f"{'✅' if done else '📄'}  {path.name}", fg=SUCCESS if done else TEXT,
         )
         self.manual_preview_btn.config(state="normal")
-        ext_label = "Word 원본 열기" if path.suffix.lower() == ".docx" else "PDF 원본 열기"
+        ext_label = "Word 원본 열기" if path.suffix.lower() in (".docx", ".doc") else "PDF 원본 열기"
         self.manual_open_file_btn.config(state="normal", text=f"📄  {ext_label}")
         self.manual_copy_prompt_btn.config(state="normal")
         self.manual_save_btn.config(state="normal")
