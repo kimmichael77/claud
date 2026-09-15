@@ -5,6 +5,32 @@ from __future__ import annotations
 import re
 from difflib import SequenceMatcher
 
+
+def _normalize_ws(text: str) -> str:
+    """연속 공백/탭/줄바꿈을 공백 하나로 축약."""
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _make_norm_map(original: str) -> tuple[str, list[int]]:
+    """
+    원본 텍스트의 공백-정규화 버전과 (정규화 위치 → 원본 위치) 매핑을 반환한다.
+    PDF에서 '피 해자' 같이 불필요한 공백이 삽입된 경우도 매칭하기 위해 사용.
+    """
+    norm_chars: list[str] = []
+    orig_pos: list[int] = []  # norm 인덱스 → orig 인덱스
+    prev_space = False
+    for i, c in enumerate(original):
+        if c in ' \t\n\r':
+            if not prev_space and norm_chars:
+                norm_chars.append(' ')
+                orig_pos.append(i)
+            prev_space = True
+        else:
+            norm_chars.append(c)
+            orig_pos.append(i)
+            prev_space = False
+    return ''.join(norm_chars), orig_pos
+
 from .coding_book import FIELDS_BY_NAME
 
 # 그룹별 형광펜 색상 (배경색, 텍스트색)
@@ -93,46 +119,73 @@ def _strip_quotes(text: str) -> str:
     return text.strip('\'""\'“”‘’「」『』').strip()
 
 
-def find_span(source: str, evidence: str, min_ratio: float = 0.62) -> tuple[int, int] | None:
+def find_span(source: str, evidence: str, min_ratio: float = 0.58) -> tuple[int, int] | None:
     """
     source 텍스트에서 evidence에 가장 유사한 구간을 찾는다.
     min_ratio 미만이면 None 반환.
+
+    매칭 순서:
+      1. 원문 완전 일치
+      2. 공백 정규화 후 완전 일치 (PDF 공백 오염 대응)
+      3. 따옴표 안 핵심 구절 정확 일치
+      4. 따옴표 안 핵심 구절 공백 정규화 일치
+      5. 공백 정규화된 공간에서 퍼지 매칭
     """
     if not evidence or len(evidence) < 4:
         return None
 
-    # 1. 완전 일치
+    # ── 1. 원문 완전 일치 ──────────────────────────────────────────
     idx = source.find(evidence)
     if idx != -1:
         return (idx, idx + len(evidence))
 
-    # 2. 짧은 핵심 구절로 재시도 (따옴표 안 텍스트)
+    # ── 2. 공백 정규화 후 완전 일치 ───────────────────────────────
+    norm_src, norm_map = _make_norm_map(source)
+    norm_ev = _normalize_ws(evidence)
+    idx = norm_src.find(norm_ev)
+    if idx != -1:
+        orig_start = norm_map[idx]
+        orig_end = norm_map[min(idx + len(norm_ev) - 1, len(norm_map) - 1)] + 1
+        return (orig_start, orig_end)
+
+    # ── 3 & 4. 따옴표 안 핵심 구절 ────────────────────────────────
     quoted = re.findall(r'["\'"「『](.*?)["\'"」』]', evidence)
     for q in quoted:
         if len(q) >= 4:
             idx = source.find(q)
             if idx != -1:
                 return (idx, idx + len(q))
+            # 공백 정규화
+            nq = _normalize_ws(q)
+            idx = norm_src.find(nq)
+            if idx != -1:
+                orig_start = norm_map[idx]
+                orig_end = norm_map[min(idx + len(nq) - 1, len(norm_map) - 1)] + 1
+                return (orig_start, orig_end)
 
-    # 3. 퍼지 매칭 (슬라이딩 윈도우)
-    ev_len = len(evidence)
-    window = min(int(ev_len * 1.4), max(ev_len + 30, 60))
-    step = max(5, ev_len // 6)
+    # ── 5. 퍼지 매칭 (정규화 공간에서 슬라이딩 윈도우) ────────────
+    ev_len = len(norm_ev)
+    src_len = len(norm_src)
+    window = min(int(ev_len * 1.3), max(ev_len + 20, 50))
+    step = max(2, ev_len // 10)   # 더 촘촘한 보폭
 
     best_ratio = 0.0
-    best_start = -1
+    best_norm_start = -1
 
-    for start in range(0, len(source) - ev_len // 2, step):
-        chunk = source[start : start + window]
-        ratio = SequenceMatcher(None, evidence, chunk, autojunk=False).quick_ratio()
+    for start in range(0, src_len - ev_len // 2, step):
+        chunk = norm_src[start : start + window]
+        ratio = SequenceMatcher(None, norm_ev, chunk, autojunk=False).quick_ratio()
         if ratio > best_ratio:
-            full = SequenceMatcher(None, evidence, chunk, autojunk=False).ratio()
+            full = SequenceMatcher(None, norm_ev, chunk, autojunk=False).ratio()
             if full > best_ratio:
                 best_ratio = full
-                best_start = start
+                best_norm_start = start
 
-    if best_ratio >= min_ratio and best_start >= 0:
-        return (best_start, min(best_start + ev_len + 15, len(source)))
+    if best_ratio >= min_ratio and best_norm_start >= 0:
+        orig_start = norm_map[best_norm_start]
+        end_norm = min(best_norm_start + ev_len + 10, len(norm_map) - 1)
+        orig_end = norm_map[end_norm] + 1
+        return (orig_start, orig_end)
 
     return None
 
