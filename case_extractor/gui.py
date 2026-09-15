@@ -30,8 +30,8 @@ from case_extractor.validate import NotJudgmentLikelyError
 
 _IS_MAC = _platform.system() == "Darwin"
 _FONT = "Segoe UI" if _platform.system() == "Windows" else "Helvetica Neue"
-# macOS renders tkinter fonts ~2pt smaller than Windows — boost all sizes
-_B = 2 if _IS_MAC else 0
+# macOS renders tkinter fonts noticeably smaller than Windows — boost all sizes
+_B = 3 if _IS_MAC else 0
 
 BG = "#f0f2fc"
 CARD_BG = "#ffffff"
@@ -43,12 +43,81 @@ DANGER = "#b91c1c"
 SUCCESS = "#166534"      # 흰글씨 대비율 충분
 WARN_COLOR = "#92400e"
 TEXT = "#0f172a"
-TEXT_MUTED = "#475569"   # 흰 배경 위 대비율 4.6:1
+TEXT_MUTED = "#3d4a5c"   # 흰 배경 위 대비율 8:1 — macOS에서도 또렷하게
 STEP1_BG = "#ede9fe"   # 연보라 - 복사 단계
 STEP2_BG = "#d1fae5"   # 연초록 - 저장 단계
 FONT_BASE = (_FONT, 11 + _B)
 FONT_BOLD = (_FONT, 11 + _B, "bold")
 FONT_TITLE = (_FONT, 17 + _B, "bold")
+
+DISABLED_BG = "#dfe3ea"
+DISABLED_FG = "#5b6472"   # #dfe3ea 위 대비율 4.6:1 — 비활성이어도 읽을 수 있게
+
+
+class _FlatButton(tk.Label):
+    """색이 그대로 나오는 버튼.
+
+    macOS의 Aqua 렌더러는 tk.Button의 bg/activebackground를 무시해서
+    모든 버튼이 회색으로 보인다. tk.Label은 어느 플랫폼에서든 bg/fg를
+    그대로 그리므로, Label에 클릭/호버를 직접 붙여 버튼으로 쓴다.
+
+    기존 tk.Button 호출부와 호환되도록 config(state=/text=/bg=/fg=/font=)를
+    모두 지원한다.
+    """
+
+    def __init__(self, parent, *, text, command, bg, fg,
+                 hover_bg=None, disabled_bg=DISABLED_BG, disabled_fg=DISABLED_FG,
+                 font=None, padx=14, pady=8, state="normal", **kw):
+        super().__init__(parent, text=text, font=font, padx=padx, pady=pady,
+                         anchor="center", **kw)
+        self._command = command
+        self._bg = bg
+        self._fg = fg
+        self._hover_bg = hover_bg or _darken(bg, 22)
+        self._disabled_bg = disabled_bg
+        self._disabled_fg = disabled_fg
+        self._state = state
+        self._hovering = False
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self._refresh()
+
+    def _on_click(self, _event):
+        if self._state == "normal" and self._command:
+            self._command()
+
+    def _on_enter(self, _event):
+        self._hovering = True
+        self._refresh()
+
+    def _on_leave(self, _event):
+        self._hovering = False
+        self._refresh()
+
+    def _refresh(self):
+        if self._state == "disabled":
+            tk.Label.configure(self, bg=self._disabled_bg, fg=self._disabled_fg, cursor="")
+        else:
+            bg = self._hover_bg if self._hovering else self._bg
+            tk.Label.configure(self, bg=bg, fg=self._fg, cursor="hand2")
+
+    def configure(self, **kw):
+        state = kw.pop("state", None)
+        if state is not None:
+            self._state = state
+        if "bg" in kw:
+            self._bg = kw.pop("bg")
+            self._hover_bg = _darken(self._bg, 22)
+        if "hover_bg" in kw:
+            self._hover_bg = kw.pop("hover_bg")
+        if "fg" in kw:
+            self._fg = kw.pop("fg")
+        if kw:
+            tk.Label.configure(self, **kw)
+        self._refresh()
+
+    config = configure
 
 
 class App(tk.Tk):
@@ -57,7 +126,8 @@ class App(tk.Tk):
         self.title("Case Law Coding Sheet Converter")
         self.geometry("1200x780")
         self.configure(bg=BG)
-        self.minsize(1000, 640)
+        # 두 열(좌: 작업 패널 660px, 우: 요약+로그)이 모두 잘리지 않는 최소 폭
+        self.minsize(1180, 680)
 
         # API 모드 상태
         self.template_path = tk.StringVar()
@@ -111,20 +181,24 @@ class App(tk.Tk):
             "Accent.TButton", font=FONT_BOLD, padding=(14, 10),
             background=ACCENT, foreground="white", borderwidth=0,
         )
-        style.map("Accent.TButton", background=[("active", ACCENT_DARK), ("disabled", "#a5b4fc")])
+        style.map("Accent.TButton",
+                  background=[("active", ACCENT_DARK), ("disabled", DISABLED_BG)],
+                  foreground=[("disabled", DISABLED_FG)])
 
         style.configure(
             "Danger.TButton", font=FONT_BOLD, padding=(14, 10),
             background=DANGER, foreground="white", borderwidth=0,
         )
-        style.map("Danger.TButton", background=[("active", "#b91c1c"), ("disabled", "#fca5a5")])
+        style.map("Danger.TButton",
+                  background=[("active", "#991b1b"), ("disabled", DISABLED_BG)],
+                  foreground=[("disabled", DISABLED_FG)])
 
-        style.configure("Ghost.TButton", font=FONT_BASE, padding=(10, 6),
-                        background=CARD_BG, borderwidth=1,
+        style.configure("Ghost.TButton", font=FONT_BOLD, padding=(11, 7),
+                        background=CARD_BG, foreground=TEXT, borderwidth=1,
                         relief="solid", bordercolor=BORDER)
         style.map("Ghost.TButton",
-                  background=[("active", ACCENT_LIGHT)],
-                  foreground=[("active", ACCENT)])
+                  background=[("active", ACCENT_LIGHT), ("disabled", DISABLED_BG)],
+                  foreground=[("active", ACCENT), ("disabled", DISABLED_FG)])
 
         style.configure("Horizontal.TProgressbar",
                         troughcolor="#e0e4f0", background=ACCENT, thickness=8)
@@ -218,11 +292,12 @@ class App(tk.Tk):
         tk.Label(title_text, text="판결문(PDF/DOCX/DOC) → 코딩시트 엑셀 자동 변환",
                  bg=BG, fg=TEXT_MUTED, font=(_FONT, 10 + _B)).pack(anchor="w")
 
-        tk.Button(
+        _FlatButton(
             title_row, text="↺  전체 초기화",
-            font=(_FONT, 10 + _B), bg=CARD_BG, fg=TEXT_MUTED,
-            relief="flat", bd=1, padx=10, pady=5, cursor="hand2",
-            activebackground=ACCENT_LIGHT, activeforeground=ACCENT,
+            font=(_FONT, 10 + _B, "bold"), bg=CARD_BG, fg=TEXT,
+            hover_bg=ACCENT_LIGHT,
+            padx=12, pady=6,
+            highlightbackground=BORDER, highlightthickness=1,
             command=self._reset_all,
         ).pack(side="right", anchor="n", pady=4)
 
@@ -230,7 +305,7 @@ class App(tk.Tk):
 
         body = ttk.Frame(root, style="TFrame")
         body.pack(fill="both", expand=True, pady=(14, 0))
-        body.columnconfigure(0, weight=3, minsize=400)
+        body.columnconfigure(0, weight=3, minsize=660)
         body.columnconfigure(1, weight=2, minsize=280)
         body.rowconfigure(0, weight=1)
 
@@ -259,11 +334,10 @@ class App(tk.Tk):
         # API 탭 래퍼 (버튼 + 활성 표시줄)
         api_wrap = tk.Frame(inner, bg="#d8daf0")
         api_wrap.pack(side="left", fill="both", expand=True)
-        self.mode_api_btn = tk.Button(
+        self.mode_api_btn = _FlatButton(
             api_wrap, text="🔑  API 모드 — API 키로 자동 처리",
             font=(_FONT, 12 + _B, "bold"), bg=ACCENT, fg="white",
-            relief="flat", bd=0, padx=18, pady=12, cursor="hand2",
-            activebackground=ACCENT_DARK, activeforeground="white",
+            hover_bg=ACCENT_DARK, padx=18, pady=12,
             command=lambda: self._set_mode("api"),
         )
         self.mode_api_btn.pack(fill="x")
@@ -275,11 +349,10 @@ class App(tk.Tk):
         # 수동 탭 래퍼
         manual_wrap = tk.Frame(inner, bg="#d8daf0")
         manual_wrap.pack(side="left", fill="both", expand=True)
-        self.mode_manual_btn = tk.Button(
+        self.mode_manual_btn = _FlatButton(
             manual_wrap, text="✂️  수동 모드 — claude.ai 채팅 이용",
             font=(_FONT, 12 + _B), bg="#d8daf0", fg=TEXT,
-            relief="flat", bd=0, padx=18, pady=12, cursor="hand2",
-            activebackground=ACCENT_LIGHT, activeforeground=ACCENT,
+            hover_bg=ACCENT_LIGHT, padx=18, pady=12,
             command=lambda: self._set_mode("manual"),
         )
         self.mode_manual_btn.pack(fill="x")
@@ -413,20 +486,18 @@ class App(tk.Tk):
         row = ttk.Frame(parent, style="TFrame")
         row.pack(fill="x", pady=(4, 0))
 
-        self.run_btn = tk.Button(
+        self.run_btn = _FlatButton(
             row, text="▶  변환 시작",
             font=(_FONT, 12 + _B, "bold"), bg=ACCENT, fg="white",
-            relief="flat", bd=0, padx=18, pady=10, cursor="hand2",
-            activebackground=ACCENT_DARK, activeforeground="white",
+            hover_bg=ACCENT_DARK, padx=18, pady=10,
             command=self._start,
         )
         self.run_btn.pack(side="left")
 
-        self.stop_btn = tk.Button(
+        self.stop_btn = _FlatButton(
             row, text="■  중지",
             font=(_FONT, 12 + _B, "bold"), bg=DANGER, fg="white",
-            relief="flat", bd=0, padx=18, pady=10, cursor="hand2",
-            activebackground="#991b1b", activeforeground="white",
+            hover_bg="#991b1b", padx=18, pady=10,
             command=self._stop, state="disabled",
         )
         self.stop_btn.pack(side="left", padx=10)
@@ -694,11 +765,10 @@ class App(tk.Tk):
         )
         self.manual_preview_btn.pack(side="left")
 
-        self.manual_open_file_btn = tk.Button(
+        self.manual_open_file_btn = _FlatButton(
             action_row, text="📄  PDF 원본 열기",
             font=(_FONT, 10 + _B, "bold"), bg=ACCENT, fg="white",
-            relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
-            activebackground=ACCENT_DARK, activeforeground="white",
+            hover_bg=ACCENT_DARK, padx=12, pady=6,
             command=self._manual_open_file, state="disabled",
         )
         self.manual_open_file_btn.pack(side="left", padx=(8, 0))
@@ -713,7 +783,7 @@ class App(tk.Tk):
         ttk.Button(preview_toolbar, text="지우기", style="Ghost.TButton",
                    command=self._manual_clear_preview).pack(side="right", padx=(0, 6))
         self.manual_preview_text = scrolledtext.ScrolledText(
-            self.manual_preview_frame, height=12, font=("Menlo", 9 + _B),
+            self.manual_preview_frame, height=12, width=40, font=("Menlo", 9 + _B),
             bg="#f8f9fa", fg=TEXT_MUTED,
             relief="flat", highlightthickness=1, highlightbackground=BORDER,
             padx=8, pady=6, state="disabled", wrap="word",
@@ -732,11 +802,10 @@ class App(tk.Tk):
         tk.Label(step1_title_row, text="  claude.ai에 보낼 프롬프트 복사",
                  bg=STEP1_BG, fg=TEXT, font=(_FONT, 11 + _B, "bold")).pack(side="left")
 
-        self.manual_copy_prompt_btn = tk.Button(
+        self.manual_copy_prompt_btn = _FlatButton(
             step1_box, text="📋  클립보드에 복사",
             font=(_FONT, 11 + _B, "bold"), bg=ACCENT, fg="white",
-            relief="flat", bd=0, padx=14, pady=8, cursor="hand2",
-            activebackground=ACCENT_DARK, activeforeground="white",
+            hover_bg=ACCENT_DARK, padx=14, pady=8,
             command=self._manual_copy_prompt, state="disabled",
         )
         self.manual_copy_prompt_btn.pack(anchor="w")
@@ -759,7 +828,7 @@ class App(tk.Tk):
                  bg=STEP2_BG, fg=TEXT, font=(_FONT, 11 + _B, "bold")).pack(side="left")
 
         self.manual_paste_text = scrolledtext.ScrolledText(
-            step2_box, height=8, font=("Menlo", 10 + _B), bg="#f0faf4", fg=TEXT,
+            step2_box, height=8, width=40, font=("Menlo", 10 + _B), bg="#f0faf4", fg=TEXT,
             relief="flat", highlightthickness=1, highlightbackground="#bbf7d0",
             padx=10, pady=8,
         )
@@ -768,11 +837,10 @@ class App(tk.Tk):
 
         save_row = tk.Frame(step2_box, bg=STEP2_BG)
         save_row.pack(fill="x")
-        self.manual_save_btn = tk.Button(
+        self.manual_save_btn = _FlatButton(
             save_row, text="✅  엑셀에 저장",
             font=(_FONT, 11 + _B, "bold"), bg=SUCCESS, fg="white",
-            relief="flat", bd=0, padx=14, pady=8, cursor="hand2",
-            activebackground="#166534", activeforeground="white",
+            hover_bg="#14532d", padx=14, pady=8,
             command=self._manual_save_direct, state="disabled",
         )
         self.manual_save_btn.pack(side="left")
@@ -1248,28 +1316,25 @@ class App(tk.Tk):
 
         result_btn_row = tk.Frame(stats_card, bg=CARD_BG)
         result_btn_row.pack(fill="x", pady=(8, 0))
-        self.open_result_btn = tk.Button(
+        self.open_result_btn = _FlatButton(
             result_btn_row, text="📊  결과 파일 열기",
             font=(_FONT, 10 + _B, "bold"), bg=ACCENT, fg="white",
-            relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
-            activebackground=ACCENT_DARK, activeforeground="white",
+            hover_bg=ACCENT_DARK, padx=10, pady=7,
             command=self._open_result_file, state="disabled",
         )
         self.open_result_btn.pack(side="left")
-        self.open_result_folder_btn = tk.Button(
+        self.open_result_folder_btn = _FlatButton(
             result_btn_row, text="📁  폴더 열기",
-            font=(_FONT, 10 + _B), bg="#e8eaf6", fg=TEXT,
-            relief="flat", bd=0, padx=10, pady=6, cursor="hand2",
-            activebackground="#d1d5fa", activeforeground=TEXT,
+            font=(_FONT, 10 + _B, "bold"), bg="#e8eaf6", fg=TEXT,
+            hover_bg="#d1d5fa", padx=10, pady=7,
             command=self._open_result_folder, state="disabled",
         )
         self.open_result_folder_btn.pack(side="left", padx=(6, 0))
 
-        self.open_annotation_btn = tk.Button(
+        self.open_annotation_btn = _FlatButton(
             result_btn_row, text="🔍  코딩 검증 보기",
-            font=(_FONT, 10 + _B), bg="#f0fdf4", fg="#166534",
-            relief="flat", bd=1, padx=10, pady=6, cursor="hand2",
-            activebackground="#dcfce7", activeforeground="#166534",
+            font=(_FONT, 10 + _B, "bold"), bg="#dcfce7", fg="#14532d",
+            hover_bg="#bbf7d0", padx=10, pady=7,
             command=self._show_annotation_window, state="disabled",
         )
         self.open_annotation_btn.pack(side="left", padx=(6, 0))
@@ -1281,7 +1346,8 @@ class App(tk.Tk):
 
         self._section_header(card, "▶", "진행 상황")
         self.log = scrolledtext.ScrolledText(
-            card, height=10, font=("Menlo", 10 + _B), bg="#0d1117", fg="#e6edf3",
+            card, height=10, width=40,
+            font=("Menlo", 10 + _B), bg="#0d1117", fg="#e6edf3",
             insertbackground="#e6edf3", relief="flat", padx=12, pady=10, wrap="word",
         )
         self.log.pack(fill="both", expand=True)
@@ -1421,13 +1487,11 @@ class _AnnotationWindow(tk.Toplevel):
                  bg=ACCENT, fg="#c7d2fe",
                  font=(_FONT, 10 + _B)).pack(side="left")
 
-        tk.Button(toolbar, text="✕  닫기",
-                  font=(_FONT, 10 + _B, "bold"),
-                  bg="#6366f1", fg="white",
-                  relief="flat", bd=0, padx=14, pady=4,
-                  cursor="hand2", activebackground="#4f46e5",
-                  activeforeground="white",
-                  command=self.destroy).pack(side="right")
+        _FlatButton(toolbar, text="✕  닫기",
+                    font=(_FONT, 10 + _B, "bold"),
+                    bg="#6366f1", fg="white", hover_bg="#4f46e5",
+                    padx=14, pady=5,
+                    command=self.destroy).pack(side="right")
 
         # 안내 문구
         hint = tk.Frame(self, bg="#eef0f8", padx=14, pady=5)
