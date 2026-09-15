@@ -25,6 +25,7 @@ from case_extractor.excel_writer import notes_path_for, write_rows
 from case_extractor.llm_extract import LLMExtractError, parse_json_response
 from case_extractor.manual_mode import build_prompt, build_row, load_response, make_prompt_file, read_response_file
 from case_extractor.text_extract import TextExtractError, extract_text, find_case_files
+from case_extractor.annotation import annotate
 from case_extractor.validate import NotJudgmentLikelyError
 
 _IS_MAC = _platform.system() == "Darwin"
@@ -321,8 +322,10 @@ class App(tk.Tk):
         self._refresh_stats_labels()
         self.mode_status_label.config(text="")
         self._last_result_path = None
+        self._last_annotation_data = None
         self.open_result_btn.config(state="disabled")
         self.open_result_folder_btn.config(state="disabled")
+        self.open_annotation_btn.config(state="disabled")
 
         self._log("전체 입력을 초기화했습니다.", "warn")
 
@@ -559,6 +562,10 @@ class App(tk.Tk):
                 self._log(f"코딩노트: {notes}", "ok")
             self._log("주의: AI가 추출한 값이므로 coding_note에 [AI 추출] 표시가 된 행은 원문과 대조 검수하세요.", "warn")
             self.after(0, lambda p=out: self._set_result_path(p))
+            # 마지막 행의 어노테이션 데이터 저장 (코딩 검증용)
+            if rows:
+                last = rows[-1]
+                self._queue_annotation_load(last)
         except PermissionError:
             msg = (
                 f"엑셀 파일을 저장하지 못했습니다: {output}\n\n"
@@ -1249,7 +1256,17 @@ class App(tk.Tk):
             command=self._open_result_folder, state="disabled",
         )
         self.open_result_folder_btn.pack(side="left", padx=(6, 0))
+
+        self.open_annotation_btn = tk.Button(
+            result_btn_row, text="🔍  코딩 검증 보기",
+            font=(_FONT, 10 + _B), bg="#f0fdf4", fg="#166534",
+            relief="flat", bd=1, padx=10, pady=6, cursor="hand2",
+            activebackground="#dcfce7", activeforeground="#166534",
+            command=self._show_annotation_window, state="disabled",
+        )
+        self.open_annotation_btn.pack(side="left", padx=(6, 0))
         self._last_result_path: Path | None = None
+        self._last_annotation_data: dict | None = None  # {"text", "coding_note", "case_id"}
 
         outer, card = self._card(parent)
         outer.pack(fill="both", expand=True)
@@ -1305,6 +1322,286 @@ class App(tk.Tk):
         except queue.Empty:
             pass
         self.after(200, self._drain_log_queue)
+
+    # ================= 코딩 검증 어노테이션 뷰어 =================
+
+    def _queue_annotation_load(self, row: dict):
+        """백그라운드에서 소스 텍스트를 불러와 어노테이션 데이터를 준비한다."""
+        coding_note = row.get("coding_note") or ""
+        if not coding_note:
+            return
+        # 현재 선택된 소스 파일 파악
+        source_path: Path | None = None
+        if hasattr(self, "manual_files") and 0 <= self.manual_selected_idx < len(self.manual_files):
+            source_path = self.manual_files[self.manual_selected_idx]
+        elif self.selected_files:
+            source_path = self.selected_files[-1]
+        if source_path is None:
+            return
+
+        case_id = row.get("case_id", "")
+
+        def _worker():
+            try:
+                from case_extractor.text_extract import extract_text
+                text = extract_text(source_path)
+                self.after(0, lambda: self._set_annotation_data(text, coding_note, case_id))
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _set_annotation_data(self, text: str, coding_note: str, case_id: str):
+        self._last_annotation_data = {
+            "text": text,
+            "coding_note": coding_note,
+            "case_id": case_id,
+        }
+        self.open_annotation_btn.config(state="normal")
+
+    def _show_annotation_window(self):
+        data = self._last_annotation_data
+        if not data:
+            messagebox.showwarning("알림", "먼저 판결문을 처리하고 저장하면 코딩 검증 뷰가 활성화됩니다.")
+            return
+
+        entries = annotate(data["text"], data["coding_note"])
+        if not entries:
+            messagebox.showinfo("알림", "coding_note에서 원문 근거를 찾을 수 없습니다.")
+            return
+
+        _AnnotationWindow(self, data["text"], entries, data.get("case_id", ""))
+
+
+class _AnnotationWindow(tk.Toplevel):
+    """판결문 원문 + 형광펜 하이라이트 검증 뷰어."""
+
+    _HIGHLIGHT_ALPHA = 0.85  # 참고용 (Tk는 투명도 미지원, 색상으로 처리)
+
+    def __init__(self, parent, source_text: str, entries: list[dict], case_id: str):
+        super().__init__(parent)
+        self.title(f"코딩 검증 — {case_id}" if case_id else "코딩 검증")
+        self.geometry("1300x780")
+        self.configure(bg=BG)
+        self.minsize(900, 600)
+
+        self._entries = entries
+        self._source_text = source_text
+        self._tag_map: dict[str, str] = {}  # entry index → text tag name
+
+        self._build_ui()
+        self._apply_highlights()
+
+    def _build_ui(self):
+        # ── 상단 타이틀 ──────────────────────────────────────────
+        top = tk.Frame(self, bg=BG, padx=16, pady=10)
+        top.pack(fill="x")
+        tk.Label(top, text="🔍  코딩 검증 — 형광펜 표시 확인",
+                 bg=BG, fg=TEXT, font=(_FONT, 15 + _B, "bold")).pack(side="left")
+        tk.Label(top, text="  항목을 클릭하면 원문에서 해당 위치로 이동합니다",
+                 bg=BG, fg=TEXT_MUTED, font=(_FONT, 10 + _B)).pack(side="left")
+        tk.Button(top, text="닫기", font=(_FONT, 10 + _B),
+                  bg="#fee2e2", fg="#991b1b", relief="flat", bd=0,
+                  padx=12, pady=4, cursor="hand2",
+                  command=self.destroy).pack(side="right")
+
+        ttk.Separator(self, orient="horizontal").pack(fill="x")
+
+        # ── 메인 분할 ────────────────────────────────────────────
+        body = tk.Frame(self, bg=BG)
+        body.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # 왼쪽: 판결문 원문
+        left_frame = tk.Frame(body, bg=BORDER)
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 6))
+
+        left_inner = tk.Frame(left_frame, bg=CARD_BG)
+        left_inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        tk.Label(left_inner, text="판결문 원문", bg=CARD_BG, fg=TEXT_MUTED,
+                 font=(_FONT, 9 + _B, "bold"), anchor="w",
+                 padx=12, pady=6).pack(fill="x")
+        ttk.Separator(left_inner).pack(fill="x")
+
+        self.source_text_widget = tk.Text(
+            left_inner, font=("Menlo" if _IS_MAC else "Consolas", 10 + _B),
+            bg=CARD_BG, fg=TEXT,
+            relief="flat", padx=12, pady=10, wrap="word",
+            state="normal",
+        )
+        left_scroll = ttk.Scrollbar(left_inner, command=self.source_text_widget.yview)
+        self.source_text_widget.config(yscrollcommand=left_scroll.set)
+        left_scroll.pack(side="right", fill="y")
+        self.source_text_widget.pack(side="left", fill="both", expand=True)
+        self.source_text_widget.insert("1.0", self._source_text)
+        self.source_text_widget.config(state="disabled")
+
+        # 오른쪽: 코딩 항목 목록
+        right_frame = tk.Frame(body, bg=BORDER, width=360)
+        right_frame.pack(side="right", fill="y")
+        right_frame.pack_propagate(False)
+
+        right_inner = tk.Frame(right_frame, bg=CARD_BG)
+        right_inner.pack(fill="both", expand=True, padx=1, pady=1)
+
+        tk.Label(right_inner, text="코딩 항목 (클릭 → 원문 이동)",
+                 bg=CARD_BG, fg=TEXT_MUTED,
+                 font=(_FONT, 9 + _B, "bold"), anchor="w",
+                 padx=12, pady=6).pack(fill="x")
+        ttk.Separator(right_inner).pack(fill="x")
+
+        # 항목 스크롤 영역
+        list_canvas = tk.Canvas(right_inner, bg=CARD_BG, highlightthickness=0)
+        list_vscroll = ttk.Scrollbar(right_inner, orient="vertical", command=list_canvas.yview)
+        self._list_inner = tk.Frame(list_canvas, bg=CARD_BG)
+        list_win = list_canvas.create_window((0, 0), window=self._list_inner, anchor="nw")
+
+        def _on_cfg(e):
+            list_canvas.configure(scrollregion=list_canvas.bbox("all"))
+        def _on_canvas_cfg(e):
+            list_canvas.itemconfig(list_win, width=e.width)
+
+        self._list_inner.bind("<Configure>", _on_cfg)
+        list_canvas.bind("<Configure>", _on_canvas_cfg)
+        list_canvas.configure(yscrollcommand=list_vscroll.set)
+
+        def _mw(e):
+            list_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        list_canvas.bind("<Enter>", lambda e: list_canvas.bind_all("<MouseWheel>", _mw))
+        list_canvas.bind("<Leave>", lambda e: list_canvas.unbind_all("<MouseWheel>"))
+
+        list_vscroll.pack(side="right", fill="y")
+        list_canvas.pack(side="left", fill="both", expand=True)
+
+        self._item_widgets: list[tk.Frame] = []
+        self._build_item_list()
+
+    def _build_item_list(self):
+        has_span_count = sum(1 for e in self._entries if e.get("span"))
+        total = len(self._entries)
+
+        summary = tk.Label(
+            self._list_inner,
+            text=f"총 {total}개 항목 중 {has_span_count}개 원문 매칭됨",
+            bg=CARD_BG, fg=TEXT_MUTED,
+            font=(_FONT, 9 + _B), anchor="w", padx=12, pady=4,
+        )
+        summary.pack(fill="x")
+
+        for idx, entry in enumerate(self._entries):
+            has_span = bool(entry.get("span"))
+            bg = entry["bg"]
+            fg = entry["fg"]
+            item_bg = bg if has_span else "#f9fafb"
+            item_fg = fg if has_span else TEXT_MUTED
+
+            item = tk.Frame(self._list_inner, bg=item_bg,
+                            highlightbackground=BORDER, highlightthickness=1)
+            item.pack(fill="x", padx=8, pady=(4, 0))
+
+            # 컬러 도트
+            dot_color = bg if has_span else "#e5e7eb"
+            tk.Frame(item, bg=dot_color, width=5).pack(side="left", fill="y")
+
+            content = tk.Frame(item, bg=item_bg)
+            content.pack(side="left", fill="both", expand=True, padx=(8, 8), pady=6)
+
+            # 변수명 + 값
+            var_row = tk.Frame(content, bg=item_bg)
+            var_row.pack(fill="x")
+            tk.Label(var_row, text=entry["var"],
+                     bg=item_bg, fg=item_fg,
+                     font=(_FONT, 10 + _B, "bold"), anchor="w").pack(side="left")
+            tk.Label(var_row, text=f"  =  {entry['value']}",
+                     bg=item_bg, fg=item_fg,
+                     font=(_FONT, 10 + _B), anchor="w").pack(side="left")
+
+            # 근거 텍스트 (짧게)
+            ev_short = entry["evidence"][:80] + ("…" if len(entry["evidence"]) > 80 else "")
+            ev_label = tk.Label(
+                content, text=ev_short,
+                bg=item_bg, fg=TEXT_MUTED if not has_span else item_fg,
+                font=(_FONT, 8 + _B), anchor="w", justify="left", wraplength=300,
+            )
+            ev_label.pack(fill="x", anchor="w")
+
+            if not has_span:
+                tk.Label(content, text="⚠ 원문 위치 미발견",
+                         bg=item_bg, fg="#9ca3af",
+                         font=(_FONT, 8 + _B)).pack(anchor="w")
+
+            if has_span:
+                # 클릭 이벤트 — 원문으로 스크롤
+                def _on_click(e, i=idx):
+                    self._scroll_to(i)
+
+                for w in (item, content, ev_label):
+                    w.bind("<Button-1>", _on_click)
+                item.config(cursor="hand2")
+
+                def _on_enter(e, w=item, b=bg):
+                    w.config(bg=_darken(b))
+                def _on_leave(e, w=item, b=bg):
+                    w.config(bg=b)
+                item.bind("<Enter>", _on_enter)
+                item.bind("<Leave>", _on_leave)
+
+            self._item_widgets.append(item)
+
+    def _apply_highlights(self):
+        self.source_text_widget.config(state="normal")
+        for idx, entry in enumerate(self._entries):
+            span = entry.get("span")
+            if not span:
+                continue
+            start_char, end_char = span
+            tag = f"hl_{idx}"
+            self._tag_map[idx] = tag
+            self.source_text_widget.tag_config(
+                tag,
+                background=entry["bg"],
+                foreground=entry["fg"],
+            )
+            # char index → tkinter "line.col" index
+            start_idx = f"1.0 + {start_char} chars"
+            end_idx = f"1.0 + {end_char} chars"
+            self.source_text_widget.tag_add(tag, start_idx, end_idx)
+
+        self.source_text_widget.config(state="disabled")
+
+    def _scroll_to(self, entry_idx: int):
+        tag = self._tag_map.get(entry_idx)
+        if not tag:
+            return
+        ranges = self.source_text_widget.tag_ranges(tag)
+        if not ranges:
+            return
+        self.source_text_widget.see(ranges[0])
+        # 잠깐 반전 효과
+        self.source_text_widget.config(state="normal")
+        self.source_text_widget.tag_config(tag + "_flash",
+                                           background=TEXT, foreground="white")
+        self.source_text_widget.tag_add(tag + "_flash", ranges[0], ranges[1])
+        self.after(350, lambda: self._unflash(tag, tag + "_flash"))
+        self.source_text_widget.config(state="disabled")
+
+    def _unflash(self, orig_tag: str, flash_tag: str):
+        self.source_text_widget.config(state="normal")
+        self.source_text_widget.tag_remove(flash_tag, "1.0", "end")
+        self.source_text_widget.config(state="disabled")
+
+
+def _darken(hex_color: str, amount: int = 20) -> str:
+    """hex 색상을 약간 어둡게 만든다."""
+    try:
+        h = hex_color.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        r = max(0, r - amount)
+        g = max(0, g - amount)
+        b = max(0, b - amount)
+        return f"#{r:02x}{g:02x}{b:02x}"
+    except Exception:
+        return hex_color
 
 
 if __name__ == "__main__":
