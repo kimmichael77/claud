@@ -1397,9 +1397,12 @@ class _AnnotationWindow(tk.Toplevel):
         self._entries = entries
         self._source_text = source_text
         self._tag_map: dict[str, str] = {}  # entry index → text tag name
+        self._list_canvas: tk.Canvas | None = None
 
         self._build_ui()
         self._apply_highlights()
+        # Canvas 스크롤 영역을 윈도우가 렌더링된 뒤 재계산
+        self.after(100, self._fix_canvas_scroll)
 
     def _build_ui(self):
         # ── 상단 타이틀 ──────────────────────────────────────────
@@ -1460,7 +1463,8 @@ class _AnnotationWindow(tk.Toplevel):
         ttk.Separator(right_inner).pack(fill="x")
 
         # 항목 스크롤 영역
-        list_canvas = tk.Canvas(right_inner, bg=CARD_BG, highlightthickness=0)
+        self._list_canvas = tk.Canvas(right_inner, bg=CARD_BG, highlightthickness=0)
+        list_canvas = self._list_canvas
         list_vscroll = ttk.Scrollbar(right_inner, orient="vertical", command=list_canvas.yview)
         self._list_inner = tk.Frame(list_canvas, bg=CARD_BG)
         list_win = list_canvas.create_window((0, 0), window=self._list_inner, anchor="nw")
@@ -1607,6 +1611,12 @@ class _AnnotationWindow(tk.Toplevel):
         self.source_text_widget.config(state="normal")
         self.source_text_widget.tag_remove(flash_tag, "1.0", "end")
         self.source_text_widget.config(state="disabled")
+
+    def _fix_canvas_scroll(self):
+        """윈도우 렌더링 후 Canvas 스크롤 영역을 재계산한다."""
+        if self._list_canvas:
+            self._list_inner.update_idletasks()
+            self._list_canvas.configure(scrollregion=self._list_canvas.bbox("all"))
 
 
 def _darken(hex_color: str, amount: int = 20) -> str:
