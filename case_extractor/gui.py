@@ -562,10 +562,10 @@ class App(tk.Tk):
                 self._log(f"코딩노트: {notes}", "ok")
             self._log("주의: AI가 추출한 값이므로 coding_note에 [AI 추출] 표시가 된 행은 원문과 대조 검수하세요.", "warn")
             self.after(0, lambda p=out: self._set_result_path(p))
-            # 마지막 행의 어노테이션 데이터 저장 (코딩 검증용)
+            # 마지막 행의 어노테이션 데이터 저장 + 자동으로 검증 창 열기
             if rows:
                 last = rows[-1]
-                self._queue_annotation_load(last)
+                self._queue_annotation_load(last, auto_show=True)
         except PermissionError:
             msg = (
                 f"엑셀 파일을 저장하지 못했습니다: {output}\n\n"
@@ -1332,7 +1332,7 @@ class App(tk.Tk):
 
     # ================= 코딩 검증 어노테이션 뷰어 =================
 
-    def _queue_annotation_load(self, row: dict):
+    def _queue_annotation_load(self, row: dict, *, auto_show: bool = False):
         """백그라운드에서 소스 텍스트를 불러와 어노테이션 데이터를 준비한다."""
         coding_note = row.get("coding_note") or ""
         if not coding_note:
@@ -1352,19 +1352,21 @@ class App(tk.Tk):
             try:
                 from case_extractor.text_extract import extract_text
                 text = extract_text(source_path)
-                self.after(0, lambda: self._set_annotation_data(text, coding_note, case_id))
+                self.after(0, lambda: self._set_annotation_data(text, coding_note, case_id, auto_show=auto_show))
             except Exception:
                 pass
 
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _set_annotation_data(self, text: str, coding_note: str, case_id: str):
+    def _set_annotation_data(self, text: str, coding_note: str, case_id: str, *, auto_show: bool = False):
         self._last_annotation_data = {
             "text": text,
             "coding_note": coding_note,
             "case_id": case_id,
         }
         self.open_annotation_btn.config(state="normal")
+        if auto_show:
+            self._show_annotation_window()
 
     def _show_annotation_window(self):
         data = self._last_annotation_data
@@ -1387,10 +1389,10 @@ class _AnnotationWindow(tk.Toplevel):
 
     def __init__(self, parent, source_text: str, entries: list[dict], case_id: str):
         super().__init__(parent)
-        self.title(f"코딩 검증 — {case_id}" if case_id else "코딩 검증")
-        self.geometry("1300x780")
+        self.title(f"🔍 코딩 검증 — {case_id}" if case_id else "🔍 코딩 검증")
+        self.geometry("1400x820")
         self.configure(bg=BG)
-        self.minsize(900, 600)
+        self.minsize(1000, 640)
 
         self._entries = entries
         self._source_text = source_text
@@ -1444,7 +1446,7 @@ class _AnnotationWindow(tk.Toplevel):
         self.source_text_widget.config(state="disabled")
 
         # 오른쪽: 코딩 항목 목록
-        right_frame = tk.Frame(body, bg=BORDER, width=360)
+        right_frame = tk.Frame(body, bg=BORDER, width=420)
         right_frame.pack(side="right", fill="y")
         right_frame.pack_propagate(False)
 
@@ -1516,19 +1518,28 @@ class _AnnotationWindow(tk.Toplevel):
             # 변수명 + 값
             var_row = tk.Frame(content, bg=item_bg)
             var_row.pack(fill="x")
-            tk.Label(var_row, text=entry["var"],
+            fd = FIELDS_BY_NAME.get(entry["var"])
+            group_text = f" [{fd.group}]" if fd else ""
+            tk.Label(var_row, text=entry["var"] + group_text,
                      bg=item_bg, fg=item_fg,
                      font=(_FONT, 10 + _B, "bold"), anchor="w").pack(side="left")
-            tk.Label(var_row, text=f"  =  {entry['value']}",
+            tk.Label(var_row, text=f"  →  {entry['value']}",
                      bg=item_bg, fg=item_fg,
-                     font=(_FONT, 10 + _B), anchor="w").pack(side="left")
+                     font=(_FONT, 11 + _B, "bold"), anchor="w").pack(side="left")
 
-            # 근거 텍스트 (짧게)
-            ev_short = entry["evidence"][:80] + ("…" if len(entry["evidence"]) > 80 else "")
+            # 변수 정의 (한 줄)
+            if fd:
+                def_short = fd.definition[:60] + ("…" if len(fd.definition) > 60 else "")
+                tk.Label(content, text=def_short,
+                         bg=item_bg, fg=TEXT_MUTED,
+                         font=(_FONT, 8 + _B), anchor="w").pack(fill="x", anchor="w")
+
+            # 근거 텍스트
+            ev_short = entry["evidence"][:100] + ("…" if len(entry["evidence"]) > 100 else "")
             ev_label = tk.Label(
-                content, text=ev_short,
+                content, text=f'"{ev_short}"',
                 bg=item_bg, fg=TEXT_MUTED if not has_span else item_fg,
-                font=(_FONT, 8 + _B), anchor="w", justify="left", wraplength=300,
+                font=(_FONT, 9 + _B), anchor="w", justify="left", wraplength=370,
             )
             ev_label.pack(fill="x", anchor="w")
 
