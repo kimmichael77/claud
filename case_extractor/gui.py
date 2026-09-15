@@ -684,12 +684,24 @@ class App(tk.Tk):
         )
         self.manual_detail_label.pack(fill="x", pady=(0, 8))
 
-        # 미리보기 토글
+        # 미리보기 + PDF 열기 버튼 행
+        action_row = tk.Frame(right, bg=CARD_BG)
+        action_row.pack(fill="x", pady=(0, 4))
+
         self.manual_preview_btn = ttk.Button(
-            right, text="👁  판결문 내용 미리보기 ▼",
+            action_row, text="👁  텍스트 미리보기 ▼",
             style="Ghost.TButton", command=self._manual_toggle_preview, state="disabled",
         )
-        self.manual_preview_btn.pack(anchor="w", pady=(0, 4))
+        self.manual_preview_btn.pack(side="left")
+
+        self.manual_open_file_btn = tk.Button(
+            action_row, text="📄  PDF 원본 열기",
+            font=(_FONT, 10 + _B, "bold"), bg=ACCENT, fg="white",
+            relief="flat", bd=0, padx=12, pady=5, cursor="hand2",
+            activebackground=ACCENT_DARK, activeforeground="white",
+            command=self._manual_open_file, state="disabled",
+        )
+        self.manual_open_file_btn.pack(side="left", padx=(8, 0))
 
         self.manual_preview_frame = tk.Frame(right, bg=CARD_BG)
         preview_toolbar = tk.Frame(self.manual_preview_frame, bg=CARD_BG)
@@ -700,11 +712,6 @@ class App(tk.Tk):
                    command=self._manual_close_preview).pack(side="right")
         ttk.Button(preview_toolbar, text="지우기", style="Ghost.TButton",
                    command=self._manual_clear_preview).pack(side="right", padx=(0, 6))
-        self.manual_open_file_btn = ttk.Button(
-            preview_toolbar, text="📄 PDF 원본 열기", style="Ghost.TButton",
-            command=self._manual_open_file, state="disabled",
-        )
-        self.manual_open_file_btn.pack(side="right", padx=(0, 6))
         self.manual_preview_text = scrolledtext.ScrolledText(
             self.manual_preview_frame, height=12, font=("Menlo", 9 + _B),
             bg="#f8f9fa", fg=TEXT_MUTED,
