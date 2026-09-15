@@ -834,7 +834,8 @@ class App(tk.Tk):
             text=f"{'✅' if done else '📄'}  {path.name}", fg=SUCCESS if done else TEXT,
         )
         self.manual_preview_btn.config(state="normal")
-        self.manual_open_file_btn.config(state="normal")
+        ext_label = "Word 원본 열기" if path.suffix.lower() == ".docx" else "PDF 원본 열기"
+        self.manual_open_file_btn.config(state="normal", text=f"📄  {ext_label}")
         self.manual_copy_prompt_btn.config(state="normal")
         self.manual_save_btn.config(state="normal")
         self.manual_copy_status_label.config(text="")
@@ -1216,7 +1217,7 @@ class App(tk.Tk):
                 msg = (
                     "불러올 수 있는 응답이 없어 엑셀을 만들지 못했습니다.\n\n"
                     "위 '진행 상황' 로그에 파일마다 건너뛴 이유가 표시되어 있습니다. 자주 있는 원인:\n"
-                    f"1) 응답 파일 이름이 판결문과 다름 — '판결문1.pdf'의 응답은 반드시 "
+                    f"1) 응답 파일 이름이 판결문과 다름 — '판결문1.pdf'(또는 .docx)의 응답은 반드시 "
                     f"{where} '판결문1.json' 이라는 이름으로 있어야 합니다.\n"
                     "2) claude.ai 답변이 JSON 형식이 아님 — 답변에 설명 문구나 거절 메시지가 섞여 있으면 "
                     "안 됩니다. JSON 객체만 붙여넣거나, 응답 전체를 그대로 붙여넣어 보세요."
