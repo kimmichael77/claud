@@ -1383,200 +1383,160 @@ class App(tk.Tk):
 
 
 class _AnnotationWindow(tk.Toplevel):
-    """판결문 원문 + 형광펜 하이라이트 검증 뷰어."""
+    """판결문 원문 + 형광펜 하이라이트 검증 뷰어.
 
-    _HIGHLIGHT_ALPHA = 0.85  # 참고용 (Tk는 투명도 미지원, 색상으로 처리)
+    좌측: 판결문 전문 (종이 느낌, 형광펜 색상 하이라이트 직접 표시)
+    우측: 코딩 변수 목록 (Listbox, 클릭 → 원문 위치 이동)
+    """
 
     def __init__(self, parent, source_text: str, entries: list[dict], case_id: str):
         super().__init__(parent)
-        self.title(f"🔍 코딩 검증 — {case_id}" if case_id else "🔍 코딩 검증")
-        self.geometry("1400x820")
-        self.configure(bg=BG)
-        self.minsize(1000, 640)
+        self.title(f"📄 코딩 검증 — {case_id}" if case_id else "📄 코딩 검증")
+        self.geometry("1500x860")
+        self.configure(bg="#e8eaf0")
+        self.minsize(900, 600)
 
         self._entries = entries
         self._source_text = source_text
-        self._tag_map: dict[str, str] = {}  # entry index → text tag name
-        self._list_canvas: tk.Canvas | None = None
+        self._tag_map: dict[int, str] = {}
 
         self._build_ui()
         self._apply_highlights()
-        # Canvas 스크롤 영역을 윈도우가 렌더링된 뒤 재계산
-        self.after(100, self._fix_canvas_scroll)
 
+    # ── UI 구성 ────────────────────────────────────────────────────────
     def _build_ui(self):
-        # ── 상단 타이틀 ──────────────────────────────────────────
-        top = tk.Frame(self, bg=BG, padx=16, pady=10)
-        top.pack(fill="x")
-        tk.Label(top, text="🔍  코딩 검증 — 형광펜 표시 확인",
-                 bg=BG, fg=TEXT, font=(_FONT, 15 + _B, "bold")).pack(side="left")
-        tk.Label(top, text="  항목을 클릭하면 원문에서 해당 위치로 이동합니다",
-                 bg=BG, fg=TEXT_MUTED, font=(_FONT, 10 + _B)).pack(side="left")
-        tk.Button(top, text="닫기", font=(_FONT, 10 + _B),
-                  bg="#fee2e2", fg="#991b1b", relief="flat", bd=0,
-                  padx=12, pady=4, cursor="hand2",
+        # 상단 툴바
+        toolbar = tk.Frame(self, bg=ACCENT, padx=14, pady=8)
+        toolbar.pack(fill="x")
+
+        tk.Label(toolbar, text="📄  판결문 형광펜 코딩 검증",
+                 bg=ACCENT, fg="white",
+                 font=(_FONT, 14 + _B, "bold")).pack(side="left")
+
+        has_span = sum(1 for e in self._entries if e.get("span"))
+        total = len(self._entries)
+        tk.Label(toolbar,
+                 text=f"  ·  총 {total}개 변수  |  원문 매칭 {has_span}개",
+                 bg=ACCENT, fg="#c7d2fe",
+                 font=(_FONT, 10 + _B)).pack(side="left")
+
+        tk.Button(toolbar, text="✕  닫기",
+                  font=(_FONT, 10 + _B, "bold"),
+                  bg="#6366f1", fg="white",
+                  relief="flat", bd=0, padx=14, pady=4,
+                  cursor="hand2", activebackground="#4f46e5",
+                  activeforeground="white",
                   command=self.destroy).pack(side="right")
 
-        ttk.Separator(self, orient="horizontal").pack(fill="x")
+        # 안내 문구
+        hint = tk.Frame(self, bg="#eef0f8", padx=14, pady=5)
+        hint.pack(fill="x")
+        tk.Label(hint,
+                 text="우측 목록에서 변수를 클릭하면 원문에서 해당 위치로 이동합니다.",
+                 bg="#eef0f8", fg=TEXT_MUTED,
+                 font=(_FONT, 9 + _B)).pack(side="left")
 
-        # ── 메인 분할 ────────────────────────────────────────────
-        body = tk.Frame(self, bg=BG)
-        body.pack(fill="both", expand=True, padx=10, pady=10)
+        # 메인 영역
+        body = tk.Frame(self, bg="#e8eaf0")
+        body.pack(fill="both", expand=True, padx=10, pady=(6, 10))
 
-        # 왼쪽: 판결문 원문
-        left_frame = tk.Frame(body, bg=BORDER)
-        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 6))
+        # ── 왼쪽: 판결문 원문 (종이 스타일) ──────────────────────────
+        paper_outer = tk.Frame(body, bg="#c9cdd8")  # 바깥 그림자 효과
+        paper_outer.pack(side="left", fill="both", expand=True, padx=(0, 8))
 
-        left_inner = tk.Frame(left_frame, bg=CARD_BG)
-        left_inner.pack(fill="both", expand=True, padx=1, pady=1)
-
-        tk.Label(left_inner, text="판결문 원문", bg=CARD_BG, fg=TEXT_MUTED,
-                 font=(_FONT, 9 + _B, "bold"), anchor="w",
-                 padx=12, pady=6).pack(fill="x")
-        ttk.Separator(left_inner).pack(fill="x")
+        paper_inner = tk.Frame(paper_outer, bg="#c9cdd8")
+        paper_inner.pack(fill="both", expand=True, padx=2, pady=2)
 
         self.source_text_widget = tk.Text(
-            left_inner, font=("Menlo" if _IS_MAC else "Consolas", 10 + _B),
-            bg=CARD_BG, fg=TEXT,
-            relief="flat", padx=12, pady=10, wrap="word",
+            paper_inner,
+            font=("Malgun Gothic" if not _IS_MAC else "AppleGothic", 11 + _B),
+            bg="#fffef8",          # 아이보리 종이 색
+            fg="#1a1a1a",
+            relief="flat",
+            padx=28, pady=24,
+            wrap="word",
+            spacing1=2, spacing3=2,
             state="normal",
+            cursor="arrow",
         )
-        left_scroll = ttk.Scrollbar(left_inner, command=self.source_text_widget.yview)
-        self.source_text_widget.config(yscrollcommand=left_scroll.set)
-        left_scroll.pack(side="right", fill="y")
+        src_scroll = ttk.Scrollbar(paper_inner, command=self.source_text_widget.yview)
+        self.source_text_widget.config(yscrollcommand=src_scroll.set)
+        src_scroll.pack(side="right", fill="y")
         self.source_text_widget.pack(side="left", fill="both", expand=True)
         self.source_text_widget.insert("1.0", self._source_text)
         self.source_text_widget.config(state="disabled")
 
-        # 오른쪽: 코딩 항목 목록
-        right_frame = tk.Frame(body, bg=BORDER, width=420)
+        # 마우스 휠 스크롤
+        def _src_mw(e):
+            self.source_text_widget.yview_scroll(int(-1 * (e.delta / 120)), "units")
+        self.source_text_widget.bind("<Enter>",
+            lambda e: self.source_text_widget.bind_all("<MouseWheel>", _src_mw))
+        self.source_text_widget.bind("<Leave>",
+            lambda e: self.source_text_widget.unbind_all("<MouseWheel>"))
+
+        # ── 오른쪽: 변수 목록 (Listbox) ────────────────────────────────
+        right_frame = tk.Frame(body, bg="#e8eaf0", width=300)
         right_frame.pack(side="right", fill="y")
         right_frame.pack_propagate(False)
 
-        right_inner = tk.Frame(right_frame, bg=CARD_BG)
-        right_inner.pack(fill="both", expand=True, padx=1, pady=1)
+        tk.Label(right_frame,
+                 text="코딩 변수 목록",
+                 bg="#e8eaf0", fg=TEXT,
+                 font=(_FONT, 10 + _B, "bold"),
+                 anchor="w").pack(fill="x", pady=(0, 4))
 
-        tk.Label(right_inner, text="코딩 항목 (클릭 → 원문 이동)",
-                 bg=CARD_BG, fg=TEXT_MUTED,
-                 font=(_FONT, 9 + _B, "bold"), anchor="w",
-                 padx=12, pady=6).pack(fill="x")
-        ttk.Separator(right_inner).pack(fill="x")
+        list_frame = tk.Frame(right_frame, bg=BORDER)
+        list_frame.pack(fill="both", expand=True)
 
-        # 항목 스크롤 영역
-        self._list_canvas = tk.Canvas(right_inner, bg=CARD_BG, highlightthickness=0)
-        list_canvas = self._list_canvas
-        list_vscroll = ttk.Scrollbar(right_inner, orient="vertical", command=list_canvas.yview)
-        self._list_inner = tk.Frame(list_canvas, bg=CARD_BG)
-        list_win = list_canvas.create_window((0, 0), window=self._list_inner, anchor="nw")
+        list_inner = tk.Frame(list_frame, bg="white")
+        list_inner.pack(fill="both", expand=True, padx=1, pady=1)
 
-        def _on_cfg(e):
-            list_canvas.configure(scrollregion=list_canvas.bbox("all"))
-        def _on_canvas_cfg(e):
-            list_canvas.itemconfig(list_win, width=e.width)
-
-        self._list_inner.bind("<Configure>", _on_cfg)
-        list_canvas.bind("<Configure>", _on_canvas_cfg)
-        list_canvas.configure(yscrollcommand=list_vscroll.set)
-
-        def _mw(e):
-            list_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
-        list_canvas.bind("<Enter>", lambda e: list_canvas.bind_all("<MouseWheel>", _mw))
-        list_canvas.bind("<Leave>", lambda e: list_canvas.unbind_all("<MouseWheel>"))
-
-        list_vscroll.pack(side="right", fill="y")
-        list_canvas.pack(side="left", fill="both", expand=True)
-
-        self._item_widgets: list[tk.Frame] = []
-        self._build_item_list()
-
-    def _build_item_list(self):
-        has_span_count = sum(1 for e in self._entries if e.get("span"))
-        total = len(self._entries)
-
-        summary = tk.Label(
-            self._list_inner,
-            text=f"총 {total}개 항목 중 {has_span_count}개 원문 매칭됨",
-            bg=CARD_BG, fg=TEXT_MUTED,
-            font=(_FONT, 9 + _B), anchor="w", padx=12, pady=4,
+        list_scroll = ttk.Scrollbar(list_inner, orient="vertical")
+        self._listbox = tk.Listbox(
+            list_inner,
+            font=(_FONT, 10 + _B),
+            selectmode="single",
+            activestyle="none",
+            relief="flat", bd=0,
+            highlightthickness=0,
+            yscrollcommand=list_scroll.set,
         )
-        summary.pack(fill="x")
+        list_scroll.config(command=self._listbox.yview)
+        list_scroll.pack(side="right", fill="y")
+        self._listbox.pack(side="left", fill="both", expand=True)
 
+        # 목록 채우기
+        self._entry_indices: list[int] = []  # listbox index → entry index
         for idx, entry in enumerate(self._entries):
-            has_span = bool(entry.get("span"))
-            bg = entry["bg"]
-            fg = entry["fg"]
-            item_bg = bg if has_span else "#f9fafb"
-            item_fg = fg if has_span else TEXT_MUTED
+            has = bool(entry.get("span"))
+            bg = entry["bg"] if has else "#f3f4f6"
+            fg = entry["fg"] if has else "#9ca3af"
+            val = str(entry["value"])[:20]
+            label = f"  {entry['var']} = {val}"
+            if not has:
+                label += "  ⚠"
+            self._listbox.insert("end", label)
+            self._listbox.itemconfig("end", bg=bg, fg=fg,
+                                     selectbackground=_darken(bg, 30),
+                                     selectforeground=fg)
+            self._entry_indices.append(idx)
 
-            item = tk.Frame(self._list_inner, bg=item_bg,
-                            highlightbackground=BORDER, highlightthickness=1)
-            item.pack(fill="x", padx=8, pady=(4, 0))
+        self._listbox.bind("<<ListboxSelect>>", self._on_list_select)
 
-            # 컬러 도트
-            dot_color = bg if has_span else "#e5e7eb"
-            tk.Frame(item, bg=dot_color, width=5).pack(side="left", fill="y")
+        # 범례
+        legend = tk.Frame(right_frame, bg="#e8eaf0")
+        legend.pack(fill="x", pady=(6, 0))
+        tk.Label(legend, text="⚠ = 원문 위치 미발견",
+                 bg="#e8eaf0", fg="#9ca3af",
+                 font=(_FONT, 8 + _B), anchor="w").pack(anchor="w")
 
-            content = tk.Frame(item, bg=item_bg)
-            content.pack(side="left", fill="both", expand=True, padx=(8, 8), pady=6)
-
-            # 변수명 + 값
-            var_row = tk.Frame(content, bg=item_bg)
-            var_row.pack(fill="x")
-            fd = FIELDS_BY_NAME.get(entry["var"])
-            group_text = f" [{fd.group}]" if fd else ""
-            tk.Label(var_row, text=entry["var"] + group_text,
-                     bg=item_bg, fg=item_fg,
-                     font=(_FONT, 10 + _B, "bold"), anchor="w").pack(side="left")
-            tk.Label(var_row, text=f"  →  {entry['value']}",
-                     bg=item_bg, fg=item_fg,
-                     font=(_FONT, 11 + _B, "bold"), anchor="w").pack(side="left")
-
-            # 변수 정의 (한 줄)
-            if fd:
-                def_short = fd.definition[:60] + ("…" if len(fd.definition) > 60 else "")
-                tk.Label(content, text=def_short,
-                         bg=item_bg, fg=TEXT_MUTED,
-                         font=(_FONT, 8 + _B), anchor="w").pack(fill="x", anchor="w")
-
-            # 근거 텍스트
-            ev_short = entry["evidence"][:100] + ("…" if len(entry["evidence"]) > 100 else "")
-            ev_label = tk.Label(
-                content, text=f'"{ev_short}"',
-                bg=item_bg, fg=TEXT_MUTED if not has_span else item_fg,
-                font=(_FONT, 9 + _B), anchor="w", justify="left", wraplength=370,
-            )
-            ev_label.pack(fill="x", anchor="w")
-
-            if not has_span:
-                tk.Label(content, text="⚠ 원문 위치 미발견",
-                         bg=item_bg, fg="#9ca3af",
-                         font=(_FONT, 8 + _B)).pack(anchor="w")
-
-            if has_span:
-                # 클릭 이벤트 — 원문으로 스크롤
-                def _on_click(e, i=idx):
-                    self._scroll_to(i)
-
-                for w in (item, content, ev_label):
-                    w.bind("<Button-1>", _on_click)
-                item.config(cursor="hand2")
-
-                def _on_enter(e, w=item, b=bg):
-                    w.config(bg=_darken(b))
-                def _on_leave(e, w=item, b=bg):
-                    w.config(bg=b)
-                item.bind("<Enter>", _on_enter)
-                item.bind("<Leave>", _on_leave)
-
-            self._item_widgets.append(item)
-
+    # ── 하이라이트 적용 ──────────────────────────────────────────────
     def _apply_highlights(self):
         self.source_text_widget.config(state="normal")
         for idx, entry in enumerate(self._entries):
             span = entry.get("span")
             if not span:
                 continue
-            start_char, end_char = span
             tag = f"hl_{idx}"
             self._tag_map[idx] = tag
             self.source_text_widget.tag_config(
@@ -1584,12 +1544,20 @@ class _AnnotationWindow(tk.Toplevel):
                 background=entry["bg"],
                 foreground=entry["fg"],
             )
-            # char index → tkinter "line.col" index
-            start_idx = f"1.0 + {start_char} chars"
-            end_idx = f"1.0 + {end_char} chars"
-            self.source_text_widget.tag_add(tag, start_idx, end_idx)
-
+            self.source_text_widget.tag_add(
+                tag,
+                f"1.0 + {span[0]} chars",
+                f"1.0 + {span[1]} chars",
+            )
         self.source_text_widget.config(state="disabled")
+
+    # ── 이벤트 ───────────────────────────────────────────────────────
+    def _on_list_select(self, _e):
+        sel = self._listbox.curselection()
+        if not sel:
+            return
+        entry_idx = self._entry_indices[sel[0]]
+        self._scroll_to(entry_idx)
 
     def _scroll_to(self, entry_idx: int):
         tag = self._tag_map.get(entry_idx)
@@ -1599,24 +1567,18 @@ class _AnnotationWindow(tk.Toplevel):
         if not ranges:
             return
         self.source_text_widget.see(ranges[0])
-        # 잠깐 반전 효과
+        # 350ms 반전 효과
         self.source_text_widget.config(state="normal")
-        self.source_text_widget.tag_config(tag + "_flash",
-                                           background=TEXT, foreground="white")
-        self.source_text_widget.tag_add(tag + "_flash", ranges[0], ranges[1])
-        self.after(350, lambda: self._unflash(tag, tag + "_flash"))
+        flash = tag + "_flash"
+        self.source_text_widget.tag_config(flash, background=ACCENT, foreground="white")
+        self.source_text_widget.tag_add(flash, ranges[0], ranges[1])
+        self.after(350, lambda: self._unflash(flash))
         self.source_text_widget.config(state="disabled")
 
-    def _unflash(self, orig_tag: str, flash_tag: str):
+    def _unflash(self, flash_tag: str):
         self.source_text_widget.config(state="normal")
         self.source_text_widget.tag_remove(flash_tag, "1.0", "end")
         self.source_text_widget.config(state="disabled")
-
-    def _fix_canvas_scroll(self):
-        """윈도우 렌더링 후 Canvas 스크롤 영역을 재계산한다."""
-        if self._list_canvas:
-            self._list_inner.update_idletasks()
-            self._list_canvas.configure(scrollregion=self._list_canvas.bbox("all"))
 
 
 def _darken(hex_color: str, amount: int = 20) -> str:
